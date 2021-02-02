@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
 
     let mut sd = SchedulesDirect::new();
-    sd.token("username_here", "password_here").await?;
+    sd.token().await?;
 
     let status = sd.status().await?;
     for system_status in Some(status.system_status).unwrap() {

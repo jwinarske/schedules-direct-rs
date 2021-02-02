@@ -1,3 +1,4 @@
+use std::env;
 use std::error::Error;
 use std::time::Duration;
 
@@ -336,12 +337,15 @@ impl SchedulesDirect {
         }
     }
 
-    pub async fn token(&mut self, username: &str, pwd: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn token(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let endpoint = format!("{}/{}/token", &self.domain, &self.api);
+
+        let username = env::var("SD_USER").expect("you must export SD_USER");
+        let pwd = env::var("SD_PWD").expect("you must export SD_PWD");
 
         use crypto::digest::Digest;
         let mut hasher = crypto::sha1::Sha1::new();
-        hasher.input_str(pwd);
+        hasher.input_str(pwd.as_str());
 
         let auth = json!({
             "username": serde_json::Value::String(username.to_string()),

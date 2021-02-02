@@ -223,6 +223,8 @@ pub struct PreferredImage {
     pub height: String,
     pub caption: Option<Caption>,
     pub uri: String,
+    pub size: Option<String>,
+    pub aspect: Option<String>,
     pub category: String,
     pub text: String,
     pub primary: String,
@@ -560,7 +562,7 @@ impl SchedulesDirect {
         Err(error)
     }
 
-    pub async fn metadata_programs(&mut self, programs: serde_json::Value) -> Result<Vec<PreferredImage>, Box<dyn std::error::Error>> {
+    pub async fn metadata_programs(&mut self, programs: serde_json::Value) -> Result<serde_json::map::Map<String, Value>, Box<dyn std::error::Error>> {
         let endpoint = format!("{}/{}/metadata/programs", &self.domain, &self.api);
 
         let resp = self.client.post(&endpoint)
@@ -572,9 +574,8 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
-            debug!("{}", &s);
-            let res: Vec<PreferredImage> = serde_json::from_str(&s.as_str())?;
-            return Ok(res);
+            let val: serde_json::Value = serde_json::from_str(&s.as_str())?;
+            return Ok(val.as_object().unwrap().clone());
         }
 
         let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();

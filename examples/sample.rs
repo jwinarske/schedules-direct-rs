@@ -110,12 +110,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let xref = sd.xref(r#"["SH011366480000","SH009682820000"]"#.parse().unwrap()).await?;
     info!("XREF: {}", xref);
      */
-    /*
-        let metadata_programs = sd.metadata_programs(json!(["SH011366480000","SH009682820000"])).await?;
-        for metadata_program in metadata_programs {
-            info!("{} x {}", metadata_program.width, metadata_program.height);
+
+    let metadata_programs = sd.metadata_programs(json!(["SH011366480000","SH009682820000"])).await?;
+    for (key, _) in &metadata_programs {
+        for arr in metadata_programs[key].as_array().unwrap() {
+            let preferred: PreferredImage = serde_json::from_str(arr.to_string().as_str())?;
+            info!("{} x {}: {}", preferred.width, preferred.height, preferred.uri);
         }
-     */
+    }
 
     let metadata_awards = sd.metadata_awards(json!(["SH011366480000","SH009682820000"])).await?;
     info!("METADATA_AWARDS: {}", metadata_awards);

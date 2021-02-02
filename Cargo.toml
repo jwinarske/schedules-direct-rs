@@ -1,0 +1,36 @@
+[package]
+name = "schedules_direct"
+version = "0.1.0"
+authors = ["Joel Winarske <joel.winarske@linux.com>"]
+edition = "2018"
+repository = "git@github.com:jwinarske/schedules-direct-rs.git"
+homepage = "https://github.com/jwinarske/schedules-direct-rs"
+description = "Library to interact with Schedules Direct API"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "^0.4"
+reqwest = { version = "0.11.0", features = ["blocking", "json", "gzip"] }
+tokio = {version = "^1.0", features=["macros", "rt-multi-thread"]}
+serde = { version = "1.0.121", features = ["derive"] }
+serde_json = "1.0.59"
+rust-crypto = "0.2.36"
+datetime = "0.5.1"
+chrono = "0.4.19"
+diesel = { version = "1.4.5", features = ["sqlite"] }
+dotenv = "0.15.0"
+
+[dev-dependencies]
+pretty_env_logger = "^0.4.0"
+
+[[example]]
+name = "sample"
+path = "examples/sample.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+panic = 'abort'

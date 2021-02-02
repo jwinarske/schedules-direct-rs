@@ -1,0 +1,10 @@
+DROP TABLE imageCache;
+DROP TABLE schedules;
+DROP TABLE programRatings;
+DROP TABLE programGenres;
+DROP TABLE programs;
+DROP TABLE people;
+DROP TABLE lineups;
+DROP TABLE credits;
+DROP TABLE messages;
+DROP TABLE settings;

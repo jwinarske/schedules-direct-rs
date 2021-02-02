@@ -12,6 +12,7 @@ static API: &str = "20191022";
 
 static CONTENT_TYPE: &str = "application/json;charset=UTF-8";
 static HEADER_TOKEN_KEY: &str = "token";
+static CLIENT_TIMEOUT: u64 = 10;
 
 #[derive(Serialize, Deserialize)]
 struct Authenticate {
@@ -83,18 +84,6 @@ pub struct Country {
 }
 
 #[derive(Deserialize)]
-pub struct Countries {
-    #[serde(rename = "North America")]
-    pub north_america: Vec<Country>,
-    #[serde(rename = "Europe")]
-    pub europe: Vec<Country>,
-    #[serde(rename = "Latin America")]
-    pub latin_america: Vec<Country>,
-    #[serde(rename = "Carribean")]
-    pub carribean: Vec<Country>,
-}
-
-#[derive(Deserialize)]
 pub struct Lineup {
     #[serde(rename = "lineupID")]
     pub lineup_id: String,
@@ -107,7 +96,7 @@ pub struct Lineup {
 #[derive(Deserialize)]
 pub struct LineupPreview {
     pub channel: String,
-    pub name: String,
+    pub name: Option<String>,
     pub callsign: String,
     pub affiliate: Option<String>,
 }
@@ -128,7 +117,7 @@ pub struct Map {
     pub station_id: String,
     pub channel: String,
     #[serde(rename = "uhfVhf")]
-    pub uhf_vhf: u32,
+    pub uhf_vhf: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -158,10 +147,10 @@ pub struct Station {
     pub callsign: String,
     pub affiliate: Option<String>,
     #[serde(rename = "broadcastLanguage")]
-    pub broadcast_language: Vec<String>,
+    pub broadcast_language: Option<Vec<String>>,
     #[serde(rename = "descriptionLanguage")]
-    pub description_language: Vec<String>,
-    pub broadcaster: Broadcaster,
+    pub description_language: Option<Vec<String>>,
+    pub broadcaster: Option<Broadcaster>,
     #[serde(rename = "stationLogo")]
     pub station_logo: Option<Vec<StationLogo>>,
 }
@@ -290,9 +279,9 @@ pub struct Program {
     #[serde(rename = "officialURL")]
     pub official_url: Option<String>,
     #[serde(rename = "keyWords")]
-    pub keywords: Keywords,
+    pub keywords: serde_json::map::Map<String, Value>,
     #[serde(rename = "contentRating")]
-    pub content_rating: Option<ContentRating>,
+    pub content_rating: Option<Vec<ContentRating>>,
     pub cast: Option<Vec<Cast>>,
     #[serde(rename = "entityType")]
     pub entity_type: String,
@@ -322,7 +311,7 @@ impl SchedulesDirect {
         let client = reqwest::Client::builder()
             .gzip(true)
             .default_headers(headers)
-            .timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(CLIENT_TIMEOUT))
             .build()
             .unwrap();
 
@@ -369,7 +358,7 @@ impl SchedulesDirect {
             self.token.valid = Some(true);
             return Ok(());
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("fetch_token: {}", resp.status())).into();
         Err(error)
     }
@@ -387,12 +376,49 @@ impl SchedulesDirect {
             let res: Status = serde_json::from_str(s.as_str())?;
             return Ok(res);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("status: {}", resp.status())).into();
         Err(error)
     }
 
-    pub async fn countries(&mut self) -> Result<Countries, Box<dyn std::error::Error>> {
+    pub async fn available(&mut self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+        let endpoint = format!("{}/{}/available", &self.domain, &self.api);
+
+        let resp = self.client.get(&endpoint)
+            .header(HEADER_TOKEN_KEY, &self.token.token)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if status.is_success() {
+            let s = resp.text().await?;
+            let res: Vec<Service> = serde_json::from_str(&s.as_str())?;
+            return Ok(res);
+        }
+        error!("{} - {}", resp.status(), &endpoint);
+        let error: Box<dyn Error> = String::from(format!("available: {}", status)).into();
+        Err(error)
+    }
+
+    pub async fn service_map(&mut self, service: &str) -> Result<serde_json::map::Map<String, Value>, Box<dyn std::error::Error>> {
+        let endpoint = format!("{}{}", &self.domain, &service);
+
+        let resp = self.client.get(&endpoint)
+            .header(HEADER_TOKEN_KEY, &self.token.token)
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let s = resp.text().await?;
+            let res: serde_json::Value = serde_json::from_str(&s.as_str())?;
+            return Ok(res.as_object().unwrap().clone());
+        }
+        error!("{} - {}", resp.status(), &endpoint);
+        let error: Box<dyn Error> = String::from(format!("service: {}", resp.status())).into();
+        Err(error)
+    }
+
+    pub async fn countries(&mut self) -> Result<serde_json::map::Map<String, Value>, Box<dyn std::error::Error>> {
         let endpoint = format!("{}/{}/available/countries", &self.domain, &self.api);
 
         let resp = self.client.get(&endpoint)
@@ -402,15 +428,15 @@ impl SchedulesDirect {
 
         if resp.status().is_success() {
             let s = resp.text().await?;
-            let countries: Countries = serde_json::from_str(s.as_str())?;
-            return Ok(countries);
+            let res: serde_json::Value = serde_json::from_str(&s.as_str())?;
+            return Ok(res.as_object().unwrap().clone());
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("countries: {}", resp.status())).into();
         Err(error)
     }
 
-    pub async fn languages(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn languages(&mut self) -> Result<serde_json::map::Map<String, Value>, Box<dyn std::error::Error>> {
         let endpoint = format!("{}/{}/available/languages", &self.domain, &self.api);
 
         let resp = self.client.get(&endpoint)
@@ -420,10 +446,29 @@ impl SchedulesDirect {
 
         if resp.status().is_success() {
             let s = resp.text().await?;
-            return Ok(s);
+            let res: serde_json::Value = serde_json::from_str(&s.as_str())?;
+            return Ok(res.as_object().unwrap().clone());
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("languages: {}", resp.status())).into();
+        Err(error)
+    }
+
+    pub async fn transmitter(&mut self, country_iso_3166_1: &str) -> Result<serde_json::map::Map<String, Value>, Box<dyn std::error::Error>> {
+        let endpoint = format!("{}/{}/available/transmitters/{}", &self.domain, &self.api, country_iso_3166_1);
+
+        let resp = self.client.get(&endpoint)
+            .header(HEADER_TOKEN_KEY, &self.token.token)
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let s = resp.text().await?;
+            let res: serde_json::Value = serde_json::from_str(&s.as_str())?;
+            return Ok(res.as_object().unwrap().clone());
+        }
+        error!("{} - {}", resp.status(), &endpoint);
+        let error: Box<dyn Error> = String::from(format!("transmitters: {}", resp.status())).into();
         Err(error)
     }
 
@@ -440,7 +485,7 @@ impl SchedulesDirect {
             let res: Vec<Lineup> = serde_json::from_str(s.as_str())?;
             return Ok(res);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("lineups: {}", resp.status())).into();
         Err(error)
     }
@@ -459,7 +504,7 @@ impl SchedulesDirect {
             let res: Vec<Schedule> = serde_json::from_str(s.as_str())?;
             return Ok(res);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("schedules: {}", resp.status())).into();
         Err(error)
     }
@@ -478,7 +523,7 @@ impl SchedulesDirect {
             let res: Vec<Schedule> = serde_json::from_str(s.as_str())?;
             return Ok(res);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("schedules: {}", resp.status())).into();
         Err(error)
     }
@@ -494,30 +539,12 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = &resp.text().await?;
+            info!("Lineup Preview: {}", s);
             let preview: Vec<LineupPreview> = serde_json::from_str(s.as_str())?;
             return Ok(preview);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("lineups_preview: {}", status)).into();
-        Err(error)
-    }
-
-    pub async fn available(&mut self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
-        let endpoint = format!("{}/{}/available", &self.domain, &self.api);
-
-        let resp = self.client.get(&endpoint)
-            .header(HEADER_TOKEN_KEY, &self.token.token)
-            .send()
-            .await?;
-
-        let status = resp.status();
-        if status.is_success() {
-            let s = resp.text().await?;
-            let services: Vec<Service> = serde_json::from_str(&s.as_str())?;
-            return Ok(services);
-        }
-
-        let error: Box<dyn Error> = String::from(format!("available: {}", status)).into();
         Err(error)
     }
 
@@ -533,11 +560,11 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
-            debug!("{}", &s);
+//            debug!("{}", &s);
             let res: Vec<Program> = serde_json::from_str(&s.as_str())?;
             return Ok(res);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();
         Err(error)
     }
@@ -557,7 +584,7 @@ impl SchedulesDirect {
             let res: Vec<Program> = serde_json::from_str(&s.as_str())?;
             return Ok(res);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();
         Err(error)
     }
@@ -577,7 +604,7 @@ impl SchedulesDirect {
             let val: serde_json::Value = serde_json::from_str(&s.as_str())?;
             return Ok(val.as_object().unwrap().clone());
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();
         Err(error)
     }
@@ -596,30 +623,30 @@ impl SchedulesDirect {
             let s = resp.text().await?;
             return Ok(s);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();
         Err(error)
     }
+    /*
+        pub async fn xref(&mut self, programs: serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
+            let endpoint = format!("{}/{}/xref", &self.domain, &self.api);
 
-    pub async fn xref(&mut self, programs: serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
-        let endpoint = format!("{}/{}/xref", &self.domain, &self.api);
+            let resp = self.client.post(&endpoint)
+                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .body(programs.to_string())
+                .send()
+                .await?;
 
-        let resp = self.client.post(&endpoint)
-            .header(HEADER_TOKEN_KEY, &self.token.token)
-            .body(programs.to_string())
-            .send()
-            .await?;
+            let status = resp.status();
+            if status.is_success() {
+                let s = resp.text().await?;
+                return Ok(s);
+            }
 
-        let status = resp.status();
-        if status.is_success() {
-            let s = resp.text().await?;
-            return Ok(s);
+            let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();
+            Err(error)
         }
-
-        let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();
-        Err(error)
-    }
-
+    */
     pub async fn lineup_add(&mut self, lineup: &str) -> Result<String, Box<dyn std::error::Error>> {
         let endpoint = format!("{}{}", &self.domain, lineup);
 
@@ -633,7 +660,7 @@ impl SchedulesDirect {
             let s = resp.text().await?;
             return Ok(s);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("lineup_add: {}", status)).into();
         Err(error)
     }
@@ -651,12 +678,12 @@ impl SchedulesDirect {
             let s = resp.text().await?;
             return Ok(s);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("lineup_delete: {}", status)).into();
         Err(error)
     }
 
-    pub async fn lineup_map(&mut self, uri: String) -> Result<Mapping, Box<dyn std::error::Error>> {
+    pub async fn lineup_map(&mut self, uri: &str) -> Result<Mapping, Box<dyn std::error::Error>> {
         let endpoint = format!("{}{}", &self.domain, uri);
 
         let resp = self.client.get(&endpoint)
@@ -670,7 +697,7 @@ impl SchedulesDirect {
             let res: Mapping = serde_json::from_str(s.as_str())?;
             return Ok(res);
         }
-
+        error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("lineup_map: {}", status)).into();
         Err(error)
     }

@@ -142,24 +142,27 @@ pub struct Broadcaster {
 #[derive(Deserialize)]
 pub struct StationLogo {
     pub uri: String,
-    pub width: String,
-    pub height: String,
+    pub width: u32,
+    pub height: u32,
     pub md5: String,
     pub source: String,
 }
 
 #[derive(Deserialize)]
 pub struct Station {
+    #[serde(rename = "isCommercialFree")]
+    pub is_commercial_free: Option<bool>,
     #[serde(rename = "stationID")]
     pub station_id: String,
     pub name: String,
     pub callsign: String,
-    pub affiliate: String,
+    pub affiliate: Option<String>,
     #[serde(rename = "broadcastLanguage")]
     pub broadcast_language: Vec<String>,
     #[serde(rename = "descriptionLanguage")]
     pub description_language: Vec<String>,
     pub broadcaster: Broadcaster,
+    #[serde(rename = "stationLogo")]
     pub station_logo: Option<Vec<StationLogo>>,
 }
 
@@ -174,7 +177,7 @@ pub struct MapMetaData {
 pub struct Mapping {
     pub map: Vec<Map>,
     pub stations: Vec<Station>,
-    pub metadata: Vec<MapMetaData>,
+    pub metadata: MapMetaData,
 }
 
 #[derive(Deserialize)]
@@ -663,7 +666,6 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
-            debug!("{}", s);
             let res: Mapping = serde_json::from_str(s.as_str())?;
             return Ok(res);
         }

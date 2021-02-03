@@ -1,5 +1,3 @@
-#![recursion_limit = "512"]
-
 #[macro_use]
 extern crate log;
 
@@ -11,6 +9,8 @@ use serde_json::json;
 use tokio::time::Duration;
 
 use schedules_direct::schedules_direct::*;
+
+static DEFAULT_LINEUP: &str = "/20191022/lineups/USA-OTA-98119";
 
 async fn dump_lineups_preview(sd: &mut SchedulesDirect, lineup_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let lineups_preview = sd.lineups_preview(lineup_id).await?;
@@ -66,8 +66,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
     info!("Status Date/Time: {}", newdate);
 
+    info!("lineup changes remaining: {}", status.lineup_changes_remaining);
     if status.lineups.is_empty() {
         error!("Account has no lineups!");
+        // add default lineup
+        if status.lineup_changes_remaining != 0 {
+            let lineup_add = sd.lineup_add(DEFAULT_LINEUP).await?;
+            let mut msg = String::new();
+            if lineup_add.message.is_some() {
+                msg = lineup_add.message.unwrap();
+            }
+            info!("Set Default Lineup: ({}) [{}]", lineup_add.response, msg);
+        }
     } else {
         for lineup in &status.lineups {
             dump_lineups_preview(&mut sd, &lineup.to_string()).await?;
@@ -107,19 +117,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dump_lineups(&mut sd, "USA", "10002").await?;
     dump_lineups(&mut sd, "USA", "98119").await?;
     dump_lineups(&mut sd, "USA", "90210").await?;
-
-    info!("lineup changes remaining: {}", status.lineup_changes_remaining);
-    if status.lineup_changes_remaining != 0 {
-        let lineup_delete = sd.lineup_delete("/20191022/lineups/USA-OTA-98119").await?;
-        info!("lineup_delete: {}", lineup_delete);
-
-        let lineup_add = sd.lineup_add("/20191022/lineups/USA-OTA-98119").await?;
-        info!("lineup_add: {}", lineup_add);
-    } else {
-        error!("no lineup changes remaining!");
-    }
-
-    dump_lineup_map(&mut sd, "/20191022/lineups/USA-OTA-98119").await?;
 
     let schedules_md5 = sd.schedules_md5(json!([{"stationID":"19631"},{"stationID":"20206"},{"stationID":"20303"},{"stationID":"110268"}])).await?;
     for schedule_md5 in schedules_md5 {

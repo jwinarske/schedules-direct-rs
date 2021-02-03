@@ -15,6 +15,16 @@ static HEADER_TOKEN_KEY: &str = "token";
 static CLIENT_TIMEOUT: u64 = 10;
 
 #[derive(Deserialize, Debug)]
+pub struct Response {
+    pub code: u32,
+    pub response: String,
+    pub message: Option<String>,
+    #[serde(rename = "serverID")]
+    pub server_id: String,
+    pub datetime: String,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct Token {
     pub valid: Option<bool>,
     response: Option<String>,
@@ -588,9 +598,8 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
-            debug!("metadata_programs: {}", s);
-            let val: serde_json::Value = serde_json::from_str(&s.as_str())?;
-            return Ok(val.as_object().unwrap().clone());
+            let res: serde_json::Value = serde_json::from_str(&s.as_str())?;
+            return Ok(res.as_object().unwrap().clone());
         }
         error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("programs: {}", status)).into();
@@ -636,7 +645,7 @@ impl SchedulesDirect {
             Err(error)
         }
     */
-    pub async fn lineup_add(&mut self, lineup: &str) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn lineup_add(&mut self, lineup: &str) -> Result<Response, Box<dyn std::error::Error>> {
         let endpoint = format!("{}{}", &self.domain, lineup);
 
         let resp = self.client.put(&endpoint)
@@ -647,14 +656,15 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
-            return Ok(s);
+            let res: Response = serde_json::from_str(s.as_str())?;
+            return Ok(res);
         }
         error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("lineup_add: {}", status)).into();
         Err(error)
     }
 
-    pub async fn lineup_delete(&mut self, lineup: &str) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn lineup_delete(&mut self, lineup: &str) -> Result<Response, Box<dyn std::error::Error>> {
         let endpoint = format!("{}{}", &self.domain, lineup);
 
         let resp = self.client.delete(&endpoint)
@@ -665,7 +675,8 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
-            return Ok(s);
+            let res: Response = serde_json::from_str(s.as_str())?;
+            return Ok(res);
         }
         error!("{} - {}", resp.status(), &endpoint);
         let error: Box<dyn Error> = String::from(format!("lineup_delete: {}", status)).into();

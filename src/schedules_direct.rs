@@ -1,10 +1,10 @@
 use std::env;
 use std::time::Duration;
 
-use backoff::ExponentialBackoff;
 use backoff::future::retry;
+use backoff::ExponentialBackoff;
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use reqwest::Client;
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -15,7 +15,6 @@ static API: &str = "20191022";
 static CONTENT_TYPE_VALUE: &str = "application/json;charset=UTF-8";
 static HEADER_TOKEN_KEY: &str = "token";
 static CLIENT_TIMEOUT: u64 = 10;
-
 
 #[derive(Deserialize, Debug)]
 pub struct Response {
@@ -29,14 +28,13 @@ pub struct Response {
 
 #[derive(Deserialize, Debug)]
 pub struct Token {
-    pub valid: Option<bool>,
-    response: Option<String>,
-    code: i32,
-    message: String,
+    pub response: Option<String>,
+    pub code: i32,
+    pub message: String,
     #[serde(rename = "serverID")]
-    server_id: String,
-    datetime: String,
-    token: String,
+    pub server_id: String,
+    pub datetime: String,
+    pub token: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -183,7 +181,7 @@ pub struct Mapping {
 
 #[derive(Deserialize)]
 pub struct Title120 {
-    pub title: String
+    pub title: String,
 }
 
 #[derive(Deserialize)]
@@ -293,7 +291,7 @@ pub struct SchedulesDirect {
     domain: String,
     api: String,
     client: Client,
-    token: Token,
+    token: String,
 }
 
 impl SchedulesDirect {
@@ -313,19 +311,11 @@ impl SchedulesDirect {
             domain: DOMAIN.parse().unwrap(),
             api: API.parse().unwrap(),
             client,
-            token: Token {
-                valid: None,
-                response: None,
-                code: 0,
-                message: "".to_string(),
-                server_id: "".to_string(),
-                datetime: "".to_string(),
-                token: "".to_string(),
-            },
+            token: "".to_string(),
         }
     }
 
-    pub async fn token(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn token(&mut self) -> Result<Token, reqwest::Error> {
         let url = format!("{}/{}/token", &self.domain, &self.api);
 
         let username = env::var("SD_USER").expect("you must export SD_USER");
@@ -336,277 +326,345 @@ impl SchedulesDirect {
         hasher.input_str(pwd.as_str());
 
         let auth = json!({
-            "username": serde_json::Value::String(username.to_string()),
-            "password": serde_json::Value::String(hasher.result_str())
-            });
+        "username": serde_json::Value::String(username.to_string()),
+        "password": serde_json::Value::String(hasher.result_str())
+        });
 
-        self.token = self.client
-            .post(&url)
-            .json(&auth)
-            .send()
-            .await?
-            .json()
-            .await?;
+        retry(ExponentialBackoff::default(), || async {
+            Ok(self
+                .client
+                .post(&url)
+                .json(&auth)
+                .send()
+                .await?
+                .json()
+                .await?)
+        })
+        .await
+    }
 
-        Ok(())
+    pub fn set_token(&mut self, token: String) {
+        self.token = token.clone();
     }
 
     pub async fn status(&mut self) -> Result<Status, reqwest::Error> {
         let url = format!("{}/{}/status", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
     pub async fn available(&mut self) -> Result<Vec<Service>, reqwest::Error> {
         let url = format!("{}/{}/available", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn service_map(&mut self, service: &str) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+    pub async fn service_map(
+        &mut self,
+        service: &str,
+    ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
         let url = format!("{}{}", &self.domain, &service);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn countries(&mut self) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+    pub async fn countries(
+        &mut self,
+    ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
         let url = format!("{}/{}/available/countries", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn languages(&mut self) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+    pub async fn languages(
+        &mut self,
+    ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
         let url = format!("{}/{}/available/languages", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn transmitter(&mut self, country_iso_3166_1: &str) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
-        let url = format!("{}/{}/available/transmitters/{}", &self.domain, &self.api, country_iso_3166_1);
+    pub async fn transmitter(
+        &mut self,
+        country_iso_3166_1: &str,
+    ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+        let url = format!(
+            "{}/{}/available/transmitters/{}",
+            &self.domain, &self.api, country_iso_3166_1
+        );
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn lineups(&mut self, country: &str, postalcode: &str) -> Result<Vec<Lineup>, reqwest::Error> {
-        let url = format!("{}/{}/lineups?country={}&postalcode={}", &self.domain, &self.api, country, postalcode);
+    pub async fn lineups(
+        &mut self,
+        country: &str,
+        postalcode: &str,
+    ) -> Result<Vec<Lineup>, reqwest::Error> {
+        let url = format!(
+            "{}/{}/lineups?country={}&postalcode={}",
+            &self.domain, &self.api, country, postalcode
+        );
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn schedules_md5(&mut self, station_ids: serde_json::Value) -> Result<Vec<Schedule>, reqwest::Error> {
+    pub async fn schedules_md5(
+        &mut self,
+        station_ids: serde_json::Value,
+    ) -> Result<Vec<Schedule>, reqwest::Error> {
         let url = format!("{}/{}/schedules/md5", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&station_ids)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn schedules(&mut self, station_ids: serde_json::Value) -> Result<Vec<Schedule>, reqwest::Error> {
+    pub async fn schedules(
+        &mut self,
+        station_ids: serde_json::Value,
+    ) -> Result<Vec<Schedule>, reqwest::Error> {
         let url = format!("{}/{}/schedules", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&station_ids)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn lineups_preview(&mut self, lineup_id: &str) -> Result<Vec<LineupPreview>, reqwest::Error> {
-        let url = format!("{}/{}/lineups/preview/{}", &self.domain, &self.api, lineup_id);
+    pub async fn lineups_preview(
+        &mut self,
+        lineup_id: &str,
+    ) -> Result<Vec<LineupPreview>, reqwest::Error> {
+        let url = format!(
+            "{}/{}/lineups/preview/{}",
+            &self.domain, &self.api, lineup_id
+        );
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn programs(&mut self, programs: serde_json::Value) -> Result<Vec<Program>, reqwest::Error> {
+    pub async fn programs(
+        &mut self,
+        programs: serde_json::Value,
+    ) -> Result<Vec<Program>, reqwest::Error> {
         let url = format!("{}/{}/programs", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&programs)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn programs_generic(&mut self, programs: serde_json::Value) -> Result<Vec<Program>, reqwest::Error> {
+    pub async fn programs_generic(
+        &mut self,
+        programs: serde_json::Value,
+    ) -> Result<Vec<Program>, reqwest::Error> {
         let url = format!("{}/{}/programs/generic", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&programs)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn metadata_programs(&mut self, programs: serde_json::Value) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+    pub async fn metadata_programs(
+        &mut self,
+        programs: serde_json::Value,
+    ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
         let url = format!("{}/{}/metadata/programs", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&programs)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
-    pub async fn metadata_awards(&mut self, programs: serde_json::Value) -> Result<serde_json::Value, reqwest::Error> {
+    pub async fn metadata_awards(
+        &mut self,
+        programs: serde_json::Value,
+    ) -> Result<serde_json::Value, reqwest::Error> {
         let url = format!("{}/{}/metadata/awards", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&programs)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
     pub async fn xref(&mut self, programs: serde_json::Value) -> Result<String, reqwest::Error> {
         let url = format!("{}/{}/xref", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&programs)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
     pub async fn lineup_add(&mut self, lineup: &str) -> Result<Response, reqwest::Error> {
         let url = format!("{}{}", &self.domain, lineup);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .put(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
     pub async fn lineup_delete(&mut self, lineup: &str) -> Result<Response, reqwest::Error> {
         let url = format!("{}{}", &self.domain, lineup);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .delete(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
     pub async fn lineup_map(&mut self, uri: &str) -> Result<Mapping, reqwest::Error> {
         let url = format!("{}{}", &self.domain, uri);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token.token)
+                .header(HEADER_TOKEN_KEY, &self.token)
                 .send()
                 .await?
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 }

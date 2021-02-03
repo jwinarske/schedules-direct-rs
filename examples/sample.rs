@@ -1,10 +1,12 @@
+#![recursion_limit = "512"]
+
 #[macro_use]
 extern crate log;
 
 use std::time::UNIX_EPOCH;
 
+use chrono::Local;
 use chrono::prelude::DateTime;
-use chrono::{Local};
 use serde_json::json;
 use tokio::time::Duration;
 
@@ -13,26 +15,31 @@ use schedules_direct::schedules_direct::*;
 async fn dump_lineups_preview(sd: &mut SchedulesDirect, lineup_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let lineups_preview = sd.lineups_preview(lineup_id).await?;
     Ok(for preview in &lineups_preview {
-        info!("{}, {}", preview.channel, preview.callsign);
+        info!("{}", preview.channel);
     })
 }
 
-async fn dump_lineups(sd: &mut SchedulesDirect, country: &str, postalcode: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn dump_lineup_map(sd: &mut SchedulesDirect, uri: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mapping = sd.lineup_map(&uri).await?;
 
+    for map in mapping.map {
+        info!("Map: {} : {}", map.channel, map.station_id);
+    }
+    for station in mapping.stations {
+        info!("Station: {} : {}", station.name, station.station_id);
+    }
+    info!("MetaData: {} : {} : {}", mapping.metadata.lineup, mapping.metadata.modified, mapping.metadata.transport);
+    Ok(())
+}
+
+async fn dump_lineups(sd: &mut SchedulesDirect, country: &str, postalcode: &str) -> Result<(), Box<dyn std::error::Error>> {
     let lineups = sd.lineups(country, postalcode).await?;
+
     Ok(for lineup in &lineups {
         info!("{}, {}, {} [{}]", lineup.name, lineup.location, lineup.lineup_id, lineup.uri);
 
-        let mapping = sd.lineup_map(&lineup.uri.as_str()).await?;
-        for map in mapping.map {
-            info!("{} {}", map.station_id, map.channel);
-        }
-        for station in mapping.stations {
-            info!("{} {} {}", station.station_id, station.name, station.callsign);
-        }
-        info!("{} {} {}", mapping.metadata.lineup, mapping.metadata.modified, mapping.metadata.modified);
-
-        dump_lineups_preview(sd, &lineup.lineup_id).await?;
+        dump_lineup_map(sd, &lineup.uri.as_str()).await?;
+//        dump_lineups_preview(sd, &lineup.lineup_id).await?;
     })
 }
 
@@ -57,7 +64,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let datetime = DateTime::parse_from_rfc3339(status.datetime.as_str()).unwrap();
     let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
-    info!("Account Expires: {}", newdate);
+    info!("Status Date/Time: {}", newdate);
+
+    if status.lineups.is_empty() {
+        error!("Account has no lineups!");
+    } else {
+        for lineup in &status.lineups {
+            dump_lineups_preview(&mut sd, &lineup.to_string()).await?;
+        }
+    }
 
     let services = sd.available().await?;
     for service in services {
@@ -86,7 +101,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Transmitters: {} - {}", value, key);
     }
 
+    dump_lineups(&mut sd, "USA", "95120").await?;
+    dump_lineups(&mut sd, "USA", "601").await?;
     dump_lineups(&mut sd, "USA", "10001").await?;
+    dump_lineups(&mut sd, "USA", "10002").await?;
     dump_lineups(&mut sd, "USA", "98119").await?;
     dump_lineups(&mut sd, "USA", "90210").await?;
 
@@ -97,19 +115,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let lineup_add = sd.lineup_add("/20191022/lineups/USA-OTA-98119").await?;
         info!("lineup_add: {}", lineup_add);
-    }
-    else {
+    } else {
         error!("no lineup changes remaining!");
     }
 
-    let mapping = sd.lineup_map("/20191022/lineups/USA-OTA-98119").await?;
-    for map in mapping.map {
-        info!("{} {}", map.station_id, map.channel);
-    }
-    for station in mapping.stations {
-        info!("{} {} {}", station.station_id, station.name, station.callsign);
-    }
-    info!("{} {} {}", mapping.metadata.lineup, mapping.metadata.modified, mapping.metadata.modified);
+    dump_lineup_map(&mut sd, "/20191022/lineups/USA-OTA-98119").await?;
 
     let schedules_md5 = sd.schedules_md5(json!([{"stationID":"19631"},{"stationID":"20206"},{"stationID":"20303"},{"stationID":"110268"}])).await?;
     for schedule_md5 in schedules_md5 {
@@ -124,6 +134,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let programs = sd.programs(json!(["SH009682820000","SH011366480000"])).await?;
     for program in programs {
         info!("Program: \"{}\": \"{}\"", program.titles120[0].title, program.descriptions.description1000[0].description);
+
+        for (key, value) in &program.keywords {
+            let keywords: Vec<String> = serde_json::from_str(value.to_string().as_str())?;
+            info!("Keyword: {} = {:#?}", key, keywords);
+        }
     }
 
     let programs_generic = sd.programs_generic(json!(["SH009682820000","SH011366480000"])).await?;

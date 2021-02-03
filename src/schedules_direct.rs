@@ -3,7 +3,7 @@ use std::error::Error;
 use std::time::Duration;
 
 use reqwest::header;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use serde_json::{json, Value};
 
 static APP_USER_AGENT: &str = "RustGrabber";
@@ -13,12 +13,6 @@ static API: &str = "20191022";
 static CONTENT_TYPE: &str = "application/json;charset=UTF-8";
 static HEADER_TOKEN_KEY: &str = "token";
 static CLIENT_TIMEOUT: u64 = 10;
-
-#[derive(Serialize, Deserialize)]
-struct Authenticate {
-    username: String,
-    password: String,
-}
 
 #[derive(Deserialize, Debug)]
 pub struct Token {
@@ -97,7 +91,8 @@ pub struct Lineup {
 pub struct LineupPreview {
     pub channel: String,
     pub name: Option<String>,
-    pub callsign: String,
+    #[serde(rename = "callsign")]
+    pub call_sign: String,
     pub affiliate: Option<String>,
 }
 
@@ -117,14 +112,17 @@ pub struct Map {
     pub station_id: String,
     pub channel: String,
     #[serde(rename = "uhfVhf")]
-    pub uhf_vhf: Option<u32>,
+    // channel 43 in /20191022/lineups/USA-OTA-95120 returns as string, not integer
+    // so until that's fixed we have to use Value
+    pub uhf_vhf: Option<Value>,
 }
 
 #[derive(Deserialize)]
 pub struct Broadcaster {
     pub city: String,
     pub state: String,
-    pub postalcode: String,
+    #[serde(rename = "postalcode")]
+    pub postal_code: String,
     pub country: String,
 }
 
@@ -144,7 +142,8 @@ pub struct Station {
     #[serde(rename = "stationID")]
     pub station_id: String,
     pub name: String,
-    pub callsign: String,
+    #[serde(rename = "callsign")]
+    pub call_sign: String,
     pub affiliate: Option<String>,
     #[serde(rename = "broadcastLanguage")]
     pub broadcast_language: Option<Vec<String>>,
@@ -225,24 +224,6 @@ pub struct Recommendation {
     #[serde(rename = "programID")]
     pub program_id: String,
     pub title120: String,
-}
-
-#[derive(Deserialize)]
-pub struct Keywords {
-    #[serde(rename = "Mood")]
-    pub mood: Option<Vec<String>>,
-    #[serde(rename = "Time Period")]
-    pub time_period: Option<Vec<String>>,
-    #[serde(rename = "Theme")]
-    pub theme: Option<Vec<String>>,
-    #[serde(rename = "Character")]
-    pub character: Option<Vec<String>>,
-    #[serde(rename = "Setting")]
-    pub setting: Option<Vec<String>>,
-    #[serde(rename = "Subject")]
-    pub subject: Option<Vec<String>>,
-    #[serde(rename = "General")]
-    pub general: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -482,6 +463,7 @@ impl SchedulesDirect {
 
         if resp.status().is_success() {
             let s = resp.text().await?;
+            debug!("lineups: {}", s);
             let res: Vec<Lineup> = serde_json::from_str(s.as_str())?;
             return Ok(res);
         }
@@ -501,7 +483,11 @@ impl SchedulesDirect {
 
         if resp.status().is_success() {
             let s = resp.text().await?;
+            debug!("schedules_md5: {}", s);
             let res: Vec<Schedule> = serde_json::from_str(s.as_str())?;
+            return Ok(res);
+        } else if resp.status() == 502 {
+            let res: Vec<Schedule> = vec![];
             return Ok(res);
         }
         error!("{} - {}", resp.status(), &endpoint);
@@ -539,7 +525,7 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = &resp.text().await?;
-            info!("Lineup Preview: {}", s);
+            debug!("Lineup Preview: {}", s);
             let preview: Vec<LineupPreview> = serde_json::from_str(s.as_str())?;
             return Ok(preview);
         }
@@ -560,7 +546,7 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
-//            debug!("{}", &s);
+            debug!("programs: {}", s);
             let res: Vec<Program> = serde_json::from_str(&s.as_str())?;
             return Ok(res);
         }
@@ -581,6 +567,7 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
+            debug!("programs_generic: {}", s);
             let res: Vec<Program> = serde_json::from_str(&s.as_str())?;
             return Ok(res);
         }
@@ -601,6 +588,7 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
+            debug!("metadata_programs: {}", s);
             let val: serde_json::Value = serde_json::from_str(&s.as_str())?;
             return Ok(val.as_object().unwrap().clone());
         }
@@ -621,6 +609,7 @@ impl SchedulesDirect {
         let status = resp.status();
         if status.is_success() {
             let s = resp.text().await?;
+            debug!("metadata_awards: {}", s);
             return Ok(s);
         }
         error!("{} - {}", resp.status(), &endpoint);

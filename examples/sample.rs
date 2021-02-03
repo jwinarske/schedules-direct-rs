@@ -48,7 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
 
     let mut sd = SchedulesDirect::new();
+
     sd.token().await?;
+
 
     let status = sd.status().await?;
     for system_status in Some(status.system_status).unwrap() {
@@ -157,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let metadata_awards = sd.metadata_awards(json!(["SH011366480000","SH009682820000"])).await?;
-    info!("METADATA_AWARDS: {}", metadata_awards);
+    info!("METADATA_AWARDS: {}", metadata_awards.to_string());
 
     Ok(())
 }

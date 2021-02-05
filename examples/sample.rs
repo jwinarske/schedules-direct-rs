@@ -127,12 +127,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let countries = sd.countries().await?;
-    for (key, _) in &countries {
-        for arr in countries[key].as_array().unwrap() {
+    for (key, value) in &countries {
+        for arr in value.as_array().unwrap() {
             let country: Country = serde_json::from_str(arr.to_string().as_str())?;
             info!(
-                "Country: {} - {}",
-                country.full_name, country.postal_code_example
+                "Country: [{}] {} - {}",
+                key, country.full_name, country.postal_code_example
             );
         }
     }
@@ -204,12 +204,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metadata_programs = sd
         .metadata_programs(json!(["SH011366480000", "SH009682820000"]))
         .await?;
-    for (key, _) in &metadata_programs {
-        for arr in metadata_programs[key].as_array().unwrap() {
+    for (key, value) in &metadata_programs {
+        for arr in value.as_array().unwrap() {
             let preferred: PreferredImage = serde_json::from_str(arr.to_string().as_str())?;
             info!(
-                "{} x {}: {}",
-                preferred.width, preferred.height, preferred.uri
+                "{}: {} x {}: {}",
+                key, preferred.width, preferred.height, preferred.uri
             );
         }
     }

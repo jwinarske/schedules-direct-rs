@@ -1,2 +1,4 @@
 /target
 schedules_direct.db
+/examples/CanadianPostalCodes202102.csv
+/examples/USZIPCodes202102.csv

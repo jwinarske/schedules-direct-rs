@@ -6,14 +6,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
-
-use rand::distributions::{Distribution, Uniform};
-use rand::thread_rng;
-use schedules_direct::schedules_direct::{Country, SchedulesDirect};
+use schedules_direct::schedules_direct::SchedulesDirect;
 
 #[derive(Deserialize, Debug)]
 struct ZipCodeRecordUS {
@@ -102,47 +95,6 @@ async fn dump_lineups(
     })
 }
 
-async fn lineup_query_random_usa(sd: &mut SchedulesDirect) -> Result<(), Box<dyn Error>> {
-    let path = Path::new("./examples/USZIPCodes202102.csv");
-    let file = BufReader::new(File::open(&path)?);
-    let mut rdr = csv::Reader::from_reader(file);
-    let mut zip_code: Vec<String> = vec![];
-    for result in rdr.deserialize() {
-        let record: ZipCodeRecordUS = result?;
-        zip_code.push(record.zip_code);
-    }
-
-    let mut rng = thread_rng();
-    let zip_code_range = Uniform::new_inclusive(1, zip_code.len());
-    for _ in 1..zip_code.len() {
-        let mut index = zip_code_range.sample_iter(&mut rng);
-        dump_lineups(sd, "USA", &*zip_code[index.next().unwrap() - 1]).await?;
-    }
-
-    Ok(())
-}
-
-async fn lineup_query_random_can(sd: &mut SchedulesDirect) -> Result<(), Box<dyn Error>> {
-    let path = Path::new("./examples/CanadianPostalCodes202102.csv");
-    let file = BufReader::new(File::open(&path)?);
-    let mut rdr = csv::Reader::from_reader(file);
-    let mut postal_code: Vec<String> = vec![];
-    for result in rdr.deserialize() {
-        let mut record: ZipCodeRecordCA = result?;
-        record.postal_code.retain(|c| !c.is_whitespace());
-        postal_code.push(record.postal_code);
-    }
-
-    let mut rng = thread_rng();
-    let postal_code_range = Uniform::new_inclusive(1, postal_code.len());
-    for _ in 1..postal_code.len() {
-        let mut index = postal_code_range.sample_iter(&mut rng);
-        dump_lineups(sd, "CAN", &*postal_code[index.next().unwrap() - 1]).await?;
-    }
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
@@ -164,22 +116,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let status = sd.status().await?;
-    println!("{:#?}", status);
-
-    let countries = sd.countries().await?;
-    for (key, value) in &countries {
-        for arr in value.as_array().unwrap() {
-            let country: Country = serde_json::from_str(arr.to_string().as_str())?;
-            info!(
-                "Country: [{}] {} ({}) - {}",
-                key, country.full_name, country.short_name, country.postal_code_example
-            );
-        }
-    }
-
-    lineup_query_random_can(&mut sd).await?;
-    lineup_query_random_usa(&mut sd).await?;
+    dump_lineups(&mut sd, "USA", "/20191022/lineups/USA-GA69533-DEFAULT").await?;
+    dump_lineups(&mut sd, "USA", "/20191022/lineups/USA-OTA-95120").await?;
+    dump_lineups(&mut sd, "USA", "/20191022/lineups/USA-CA61116-DEFAULT").await?;
 
     Ok(())
 }

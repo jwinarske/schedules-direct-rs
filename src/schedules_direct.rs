@@ -123,9 +123,7 @@ pub struct Map {
     pub station_id: String,
     pub channel: String,
     #[serde(rename = "uhfVhf")]
-    // channel 43 in /20191022/lineups/USA-OTA-95120 returns as string, not integer
-    // so until that's fixed we have to use Value
-    pub uhf_vhf: Option<Value>,
+    pub uhf_vhf: String,
 }
 
 #[derive(Deserialize)]
@@ -330,17 +328,16 @@ impl SchedulesDirect {
         "password": serde_json::Value::String(hasher.result_str())
         });
 
-        retry(ExponentialBackoff::default(), || async {
-            Ok(self
-                .client
-                .post(&url)
-                .json(&auth)
-                .send()
-                .await?
-                .json()
-                .await?)
-        })
-        .await
+        self.token = "".to_string();
+
+        Ok(self
+            .client
+            .post(&url)
+            .json(&auth)
+            .send()
+            .await?
+            .json()
+            .await?)
     }
 
     pub fn set_token(&mut self, token: String) {
@@ -348,6 +345,7 @@ impl SchedulesDirect {
     }
 
     pub async fn status(&mut self) -> Result<Status, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/status", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -363,6 +361,7 @@ impl SchedulesDirect {
     }
 
     pub async fn available(&mut self) -> Result<Vec<Service>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/available", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -381,6 +380,7 @@ impl SchedulesDirect {
         &mut self,
         service: &str,
     ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}{}", &self.domain, &service);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -398,6 +398,7 @@ impl SchedulesDirect {
     pub async fn countries(
         &mut self,
     ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/available/countries", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -415,6 +416,7 @@ impl SchedulesDirect {
     pub async fn languages(
         &mut self,
     ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/available/languages", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -433,6 +435,7 @@ impl SchedulesDirect {
         &mut self,
         country_iso_3166_1: &str,
     ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!(
             "{}/{}/available/transmitters/{}",
             &self.domain, &self.api, country_iso_3166_1
@@ -455,6 +458,7 @@ impl SchedulesDirect {
         country: &str,
         postalcode: &str,
     ) -> Result<Vec<Lineup>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!(
             "{}/{}/lineups?country={}&postalcode={}",
             &self.domain, &self.api, country, postalcode
@@ -476,6 +480,7 @@ impl SchedulesDirect {
         &mut self,
         station_ids: serde_json::Value,
     ) -> Result<Vec<Schedule>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/schedules/md5", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -495,6 +500,7 @@ impl SchedulesDirect {
         &mut self,
         station_ids: serde_json::Value,
     ) -> Result<Vec<Schedule>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/schedules", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -514,6 +520,7 @@ impl SchedulesDirect {
         &mut self,
         lineup_id: &str,
     ) -> Result<Vec<LineupPreview>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!(
             "{}/{}/lineups/preview/{}",
             &self.domain, &self.api, lineup_id
@@ -535,6 +542,7 @@ impl SchedulesDirect {
         &mut self,
         programs: serde_json::Value,
     ) -> Result<Vec<Program>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/programs", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -554,6 +562,7 @@ impl SchedulesDirect {
         &mut self,
         programs: serde_json::Value,
     ) -> Result<Vec<Program>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/programs/generic", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -573,6 +582,7 @@ impl SchedulesDirect {
         &mut self,
         programs: serde_json::Value,
     ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/metadata/programs", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -592,6 +602,7 @@ impl SchedulesDirect {
         &mut self,
         programs: serde_json::Value,
     ) -> Result<serde_json::Value, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/metadata/awards", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -608,6 +619,7 @@ impl SchedulesDirect {
     }
 
     pub async fn xref(&mut self, programs: serde_json::Value) -> Result<String, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}/{}/xref", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -624,6 +636,7 @@ impl SchedulesDirect {
     }
 
     pub async fn lineup_add(&mut self, lineup: &str) -> Result<Response, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}{}", &self.domain, lineup);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -639,6 +652,7 @@ impl SchedulesDirect {
     }
 
     pub async fn lineup_delete(&mut self, lineup: &str) -> Result<Response, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}{}", &self.domain, lineup);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -654,6 +668,7 @@ impl SchedulesDirect {
     }
 
     pub async fn lineup_map(&mut self, uri: &str) -> Result<Mapping, reqwest::Error> {
+        assert!(!self.token.is_empty());
         let url = format!("{}{}", &self.domain, uri);
         retry(ExponentialBackoff::default(), || async {
             Ok(self

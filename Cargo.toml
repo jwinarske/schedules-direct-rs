@@ -26,6 +26,7 @@ pretty_env_logger = "^0.4.0"
 csv = "1.1.5"
 serde_derive = "1.0.123"
 rand = "0.8.3"
+futures = "0.3.12"
 
 [[example]]
 name = "sample"

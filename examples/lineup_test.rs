@@ -11,9 +11,10 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
+use futures::stream::StreamExt;
 use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
-use schedules_direct::schedules_direct::{Country, SchedulesDirect};
+use schedules_direct::{Lineup, SchedulesDirect};
 
 #[derive(Deserialize, Debug)]
 struct ZipCodeRecordUS {
@@ -55,54 +56,7 @@ struct ZipCodeRecordCA {
     longitude: String,
 }
 
-async fn dump_lineups_preview(
-    sd: &mut SchedulesDirect,
-    lineup_id: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let lineups_preview = sd.lineups_preview(lineup_id).await?;
-    Ok(for preview in &lineups_preview {
-        info!("{}", preview.channel);
-    })
-}
-
-async fn dump_lineup_map(
-    sd: &mut SchedulesDirect,
-    uri: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mapping = sd.lineup_map(&uri).await?;
-
-    for map in mapping.map {
-        info!("Map: {} : {}", map.channel, map.station_id);
-    }
-    for station in mapping.stations {
-        info!("Station: {} : {}", station.name, station.station_id);
-    }
-    info!(
-        "MetaData: {} : {} : {}",
-        mapping.metadata.lineup, mapping.metadata.modified, mapping.metadata.transport
-    );
-    Ok(())
-}
-
-async fn dump_lineups(
-    sd: &mut SchedulesDirect,
-    country: &str,
-    postalcode: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let lineups = sd.lineups(country, postalcode).await?;
-
-    Ok(for lineup in &lineups {
-        info!(
-            "{}, {}, {} [{}]",
-            lineup.name, lineup.location, lineup.lineup_id, lineup.uri
-        );
-
-        //        dump_lineup_map(sd, &lineup.uri.as_str()).await?;
-        dump_lineups_preview(sd, &lineup.lineup_id).await?;
-    })
-}
-
-async fn lineup_query_random_usa(sd: &mut SchedulesDirect) -> Result<(), Box<dyn Error>> {
+async fn lineup_query_random_usa() -> Result<Vec<(&'static str, String)>, Box<dyn Error>> {
     let path = Path::new("./examples/USZIPCodes202102.csv");
     let file = BufReader::new(File::open(&path)?);
     let mut rdr = csv::Reader::from_reader(file);
@@ -114,15 +68,19 @@ async fn lineup_query_random_usa(sd: &mut SchedulesDirect) -> Result<(), Box<dyn
 
     let mut rng = thread_rng();
     let zip_code_range = Uniform::new_inclusive(1, zip_code.len());
+    let mut lineup_query: Vec<(&'static str, String)> = vec![];
     for _ in 1..zip_code.len() {
         let mut index = zip_code_range.sample_iter(&mut rng);
-        dump_lineups(sd, "USA", &*zip_code[index.next().unwrap() - 1]).await?;
+        lineup_query.push((
+            "USA",
+            (&*zip_code[index.next().unwrap() - 1]).parse().unwrap(),
+        ));
     }
 
-    Ok(())
+    Ok(lineup_query)
 }
 
-async fn lineup_query_random_can(sd: &mut SchedulesDirect) -> Result<(), Box<dyn Error>> {
+async fn lineup_query_random_can() -> Result<Vec<(&'static str, String)>, Box<dyn Error>> {
     let path = Path::new("./examples/CanadianPostalCodes202102.csv");
     let file = BufReader::new(File::open(&path)?);
     let mut rdr = csv::Reader::from_reader(file);
@@ -135,12 +93,16 @@ async fn lineup_query_random_can(sd: &mut SchedulesDirect) -> Result<(), Box<dyn
 
     let mut rng = thread_rng();
     let postal_code_range = Uniform::new_inclusive(1, postal_code.len());
+    let mut lineup_query: Vec<(&'static str, String)> = vec![];
     for _ in 1..postal_code.len() {
         let mut index = postal_code_range.sample_iter(&mut rng);
-        dump_lineups(sd, "CAN", &*postal_code[index.next().unwrap() - 1]).await?;
+        lineup_query.push((
+            "CAN",
+            (&*postal_code[index.next().unwrap() - 1]).parse().unwrap(),
+        ));
     }
 
-    Ok(())
+    Ok(lineup_query)
 }
 
 #[tokio::main]
@@ -149,17 +111,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut sd = SchedulesDirect::new();
 
-    let token = sd.token().await?;
-    match token.code {
+    let token = &sd.token().await?;
+
+    match &token.code {
         0 => {
-            sd.set_token(token.token);
+            let t = &token.token;
+            sd.set_token(&t.as_str());
         }
         3000 => {
-            error!("{}, Try again in an hour", token.message);
+            error!("{}, Try again in an hour", &token.message);
             std::process::exit(-1);
         }
         _ => {
-            println!("{:#?}", token);
+            println!("{:#?}", &token);
             std::process::exit(-1);
         }
     }
@@ -167,19 +131,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let status = sd.status().await?;
     println!("{:#?}", status);
 
-    let countries = sd.countries().await?;
-    for (key, value) in &countries {
-        for arr in value.as_array().unwrap() {
-            let country: Country = serde_json::from_str(arr.to_string().as_str())?;
-            info!(
-                "Country: [{}] {} ({}) - {}",
-                key, country.full_name, country.short_name, country.postal_code_example
-            );
-        }
-    }
+    let sd = &sd;
 
-    lineup_query_random_can(&mut sd).await?;
-    lineup_query_random_usa(&mut sd).await?;
+    let list = lineup_query_random_usa().await?;
+    let fetches = futures::stream::iter(list.into_iter().map(|p| async move {
+        match sd.lineups(p.0, p.1.as_str()).await {
+            Ok(lineups) => {
+                for lineup in &lineups {
+                    info!("{}", lineup.uri);
+                }
+                lineups
+            }
+            Err(_) => {
+                error!("Failed to get lineup {} {}", p.0, p.1);
+                vec![]
+            }
+        }
+    }))
+    .buffer_unordered(100)
+    .collect::<Vec<Vec<Lineup>>>();
+    println!("Waiting on USA...");
+    fetches.await;
+
+    let list = lineup_query_random_can().await?;
+    let fetches = futures::stream::iter(list.into_iter().map(|p| async move {
+        match sd.lineups(p.0, p.1.as_str()).await {
+            Ok(lineups) => {
+                for lineup in &lineups {
+                    info!("{}", lineup.uri);
+                }
+                lineups
+            }
+            Err(_) => {
+                error!("Failed to get lineup {} {}", p.0, p.1);
+                vec![]
+            }
+        }
+    }))
+    .buffer_unordered(100)
+    .collect::<Vec<Vec<Lineup>>>();
+    println!("Waiting on Canada...");
+    fetches.await;
 
     Ok(())
 }

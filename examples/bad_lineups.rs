@@ -6,7 +6,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-use schedules_direct::schedules_direct::SchedulesDirect;
+use schedules_direct::SchedulesDirect;
 
 #[derive(Deserialize, Debug)]
 struct ZipCodeRecordUS {
@@ -90,7 +90,7 @@ async fn dump_lineups(
             lineup.name, lineup.location, lineup.lineup_id, lineup.uri
         );
 
-        //        dump_lineup_map(sd, &lineup.uri.as_str()).await?;
+        dump_lineup_map(sd, &lineup.uri.as_str()).await?;
         dump_lineups_preview(sd, &lineup.lineup_id).await?;
     })
 }
@@ -104,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = sd.token().await?;
     match token.code {
         0 => {
-            sd.set_token(token.token);
+            sd.set_token(&token.token);
         }
         3000 => {
             error!("{}, Try again in an hour", token.message);

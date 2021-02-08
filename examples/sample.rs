@@ -8,7 +8,7 @@ use chrono::Local;
 use serde_json::json;
 use tokio::time::Duration;
 
-use schedules_direct::schedules_direct::*;
+use schedules_direct::*;
 
 static DEFAULT_LINEUP: &str = "/20191022/lineups/USA-OTA-98119";
 
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = sd.token().await?;
     match token.code {
         0 => {
-            sd.set_token(token.token);
+            sd.set_token(&token.token);
         }
         3000 => {
             error!("{}, Try again in an hour", token.message);

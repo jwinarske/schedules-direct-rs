@@ -90,7 +90,7 @@ async fn dump_lineups(
             lineup.name, lineup.location, lineup.lineup_id, lineup.uri
         );
 
-        dump_lineup_map(sd, &lineup.uri.as_str()).await?;
+        //dump_lineup_map(sd, &lineup.uri.as_str()).await?;
         dump_lineups_preview(sd, &lineup.lineup_id).await?;
     })
 }

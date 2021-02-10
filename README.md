@@ -8,12 +8,6 @@ Only testing on Linux.  Should work on everything else...
 
 ## Schedules Direct Grabber
 
-Using API 20191022
-
-### Features
-Safe Rust
-All API calls implement exponential/back-off/retry
-
 ### Enable Log output
 
 RUST_LOG=debug

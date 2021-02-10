@@ -1,62 +1,140 @@
 #[macro_use]
 extern crate log;
 
-use std::time::UNIX_EPOCH;
-
 use chrono::prelude::DateTime;
-use chrono::Local;
-use serde_json::json;
-use tokio::time::Duration;
+use serde_json::{Map, Value};
 
 use schedules_direct::*;
+use futures::StreamExt;
 
 static DEFAULT_LINEUP: &str = "/20191022/lineups/USA-OTA-98119";
+static SCHEDULE_CHUNK_SIZE: usize = 10;
 
 async fn dump_lineups_preview(
-    sd: &mut SchedulesDirect,
-    lineup_id: &str,
+    sd: &SchedulesDirect,
+    lineup: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let lineups_preview = sd.lineups_preview(lineup_id).await?;
+    let lineups_preview = sd.lineups_preview(&lineup).await?;
     Ok(for preview in &lineups_preview {
-        info!("{}", preview.channel);
+        if preview.name.is_some() {
+            print!("{}; ", preview.name.as_ref().unwrap());
+        }
+        if preview.affiliate.is_some() {
+            print!("{}; ", preview.affiliate.as_ref().unwrap());
+        }
+        println!("{}; {}", &preview.call_sign, &preview.channel);
     })
 }
 
 async fn dump_lineup_map(
-    sd: &mut SchedulesDirect,
+    sd: &SchedulesDirect,
     uri: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mapping = sd.lineup_map(&uri).await?;
 
+    let mut station_ids: Vec<Value> = vec![];
+
     for map in mapping.map {
-        info!("Map: {} : {}", map.channel, map.station_id);
+
+        match mapping.metadata.transport.as_str() {
+            "Antenna" => {
+                info!("Antenna: {} {} {}.{}", map.station_id, map.uhf_vhf.unwrap(), map.atsc_major.unwrap(), map.atsc_minor.unwrap());
+
+                let mut obj = Map::new();
+                obj.insert("stationID".parse().unwrap(), Value::String(map.station_id));
+                station_ids.push(Value::Object(obj));
+            }
+            "Cable" => {
+                info!("Map: {} {}", map.station_id, map.channel.unwrap());
+            }
+            "DVB-C" => {
+            }
+            "DVB-S" => {
+            }
+            "DVB-T" => {
+            }
+            "IPTV" => {
+            }
+            "Satellite" => {
+            }
+            _ => {}
+        }
     }
-    for station in mapping.stations {
-        info!("Station: {} : {}", station.name, station.station_id);
-    }
-    info!(
-        "MetaData: {} : {} : {}",
-        mapping.metadata.lineup, mapping.metadata.modified, mapping.metadata.transport
-    );
+
+    let fetches = futures::stream::iter(station_ids.rchunks_exact(SCHEDULE_CHUNK_SIZE).into_iter().map(|id| async move {
+        match sd.schedules_md5(Value::Array(Vec::from(id))).await {
+            Ok(md5) => {
+                for (key, _) in &md5 {
+                    info!("Station Id: {}", key);
+                }
+                md5
+            }
+            Err(_) => {
+                error!("Failed to get schedules");
+                Map::new()
+            }
+        }
+    }))
+        .buffer_unordered(SCHEDULE_CHUNK_SIZE)
+        .collect::<Vec<Map<String, Value>>>();
+    println!("Waiting on /schedules/md5...");
+    fetches.await;
+
+    let fetches = futures::stream::iter(station_ids.rchunks_exact(SCHEDULE_CHUNK_SIZE).into_iter().map(|id| async move {
+        match sd.schedules(Value::Array(Vec::from(id))).await {
+            Ok(schedules) => {
+                for schedule in &schedules {
+                    info!("{}, modified: {}, start_date: {}, md5: {}", schedule.station_id, schedule.metadata.modified, schedule.metadata.start_date, schedule.metadata.md5);
+                }
+                schedules
+            }
+            Err(_) => {
+                error!("Failed to get schedules");
+                vec![]
+            }
+        }
+    }))
+        .buffer_unordered(SCHEDULE_CHUNK_SIZE)
+        .collect::<Vec<Vec<Schedules>>>();
+    println!("Waiting on /schedules...");
+    fetches.await;
+
     Ok(())
 }
 
-async fn dump_lineups(
-    sd: &mut SchedulesDirect,
-    country: &str,
-    postalcode: &str,
+async fn handle_status(
+    sd: &SchedulesDirect,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let lineups = sd.lineups(country, postalcode).await?;
 
-    Ok(for lineup in &lineups {
-        info!(
-            "{}, {}, {} [{}]",
-            lineup.name, lineup.location, lineup.lineup_id, lineup.uri
-        );
+    let status = sd.status().await?;
+    info!("{:#?}", &status);
+    for system_status in &status.system_status {
+        info!("{:#?}", system_status);
+    }
+    let account = &status.account;
+    let datetime = DateTime::parse_from_rfc3339(&account.expires.as_str()).unwrap();
+    let expires_datetime = datetime.format("%Y-%m-%d %H:%M:%S");
+    info!("Expires Date/Time: {}", expires_datetime);
 
-        dump_lineup_map(sd, &lineup.uri.as_str()).await?;
-        //        dump_lineups_preview(sd, &lineup.lineup_id).await?;
-    })
+    if status.lineups.is_empty() {
+        error!("Account has no lineups!");
+        // add default lineup
+        let resp = sd.lineup_add(DEFAULT_LINEUP).await?;
+        let mut msg = String::new();
+        if resp.message.is_some() {
+            msg = resp.message.unwrap();
+        }
+        info!("Set Default Lineup: ({}) [{}]", resp.response, msg);
+    } else {
+        for lineup in &status.lineups {
+            if lineup.lineup.is_some() {
+                dump_lineups_preview(&sd, &lineup.lineup.as_ref().unwrap()).await?;
+            }
+            dump_lineup_map(&sd, &lineup.uri).await?;
+        }
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -77,53 +155,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => {}
     }
 
-    let status = sd.status().await?;
-    for system_status in Some(status.system_status).unwrap() {
-        let datetime = DateTime::parse_from_rfc3339(&system_status.date.as_str()).unwrap();
-        let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
-        info!(
-            "{} [{}] {}",
-            newdate, system_status.status, system_status.message
-        );
-    }
-    let account = &status.account;
-    let systime = UNIX_EPOCH + Duration::from_secs_f64(account.expires_epoch);
-    let datetime = DateTime::<Local>::from(systime);
-    let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
-    info!("Account Expires (Epoch): {}", timestamp_str);
-
-    let datetime = DateTime::parse_from_rfc3339(status.datetime.as_str()).unwrap();
-    let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
-    info!("Status Date/Time: {}", newdate);
-
-    info!(
-        "lineup changes remaining: {}",
-        status.lineup_changes_remaining
-    );
-    if status.lineups.is_empty() {
-        error!("Account has no lineups!");
-        // add default lineup
-        if status.lineup_changes_remaining != 0 {
-            let lineup_add = sd.lineup_add(DEFAULT_LINEUP).await?;
-            let mut msg = String::new();
-            if lineup_add.message.is_some() {
-                msg = lineup_add.message.unwrap();
-            }
-            info!("Set Default Lineup: ({}) [{}]", lineup_add.response, msg);
-        }
-    } else {
-        for lineup in &status.lineups {
-            dump_lineups_preview(&mut sd, &lineup.to_string()).await?;
-        }
-    }
+    handle_status(&sd).await?;
 
     let services = sd.available().await?;
     for service in services {
         info!("{} - {}", service.description, service.uri);
-        let generic = sd.service_map(service.uri.as_str()).await?;
-        for (key, val) in &generic {
-            info!("Generic: {} {}", key, val);
-        }
     }
 
     let countries = sd.countries().await?;
@@ -139,34 +175,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let languages = sd.languages().await?;
     for (key, value) in &languages {
-        info!("Language: {} - {}", value, key);
+        info!("Language: {} - {}", key, value);
     }
 
-    let transmitters = sd.transmitter("USA").await?;
+    let dvb_s = sd.dvb_s().await?;
+    for obj in &dvb_s {
+        for (_, value) in obj {
+            info!("DVB-S: {}", value);
+        }
+    }
+
+    let transmitters = sd.dvb_t("GBR").await?;
     for (key, value) in &transmitters {
-        info!("Transmitters: {} - {}", value, key);
+        info!("Transmitters: {} - {}", key, value);
     }
 
-    dump_lineups(&mut sd, "USA", "95120").await?;
-    dump_lineups(&mut sd, "USA", "601").await?;
-    dump_lineups(&mut sd, "USA", "10001").await?;
-    dump_lineups(&mut sd, "USA", "10002").await?;
-    dump_lineups(&mut sd, "USA", "98119").await?;
-    dump_lineups(&mut sd, "USA", "90210").await?;
-
-    let schedules_md5 = sd.schedules_md5(json!([{"stationID":"19631"},{"stationID":"20206"},{"stationID":"20303"},{"stationID":"110268"}])).await?;
-    for schedule_md5 in schedules_md5 {
-        info!(
-            "Schedule md5: {} - {}: {}",
-            schedule_md5.station_id, schedule_md5.code, schedule_md5.response
-        );
-    }
-
+/*
     let schedules = sd.schedules(json!([{"stationID":"19631"},{"stationID":"20206"},{"stationID":"20303"},{"stationID":"110268"}])).await?;
     for schedule in schedules {
         info!(
             "Schedule: {} - {}: {}",
-            schedule.station_id, schedule.code, schedule.response
+            schedule.code.unwrap(), schedule.code.unwrap(), schedule.response.unwrap()
         );
     }
 
@@ -218,6 +247,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .metadata_awards(json!(["SH011366480000", "SH009682820000"]))
         .await?;
     info!("METADATA_AWARDS: {}", metadata_awards.to_string());
-
+*/
     Ok(())
 }

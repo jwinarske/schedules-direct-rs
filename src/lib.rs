@@ -5,12 +5,12 @@ use backoff::future::retry;
 use backoff::ExponentialBackoff;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use reqwest::Client;
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::{Deserialize};
+use serde_json::{json, Value, Map};
 
 static APP_USER_AGENT: &str = "RustGrabber";
-static DOMAIN: &str = "https://w8xmzqba6c.execute-api.us-east-1.amazonaws.com";
-static API: &str = "20191022";
+static DOMAIN: &str = "https://json.schedulesdirect.org";
+static API: &str = "20141201";
 
 static CONTENT_TYPE_VALUE: &str = "application/json;charset=UTF-8";
 static HEADER_TOKEN_KEY: &str = "token";
@@ -18,11 +18,13 @@ static CLIENT_TIMEOUT: u64 = 10;
 
 #[derive(Deserialize, Debug)]
 pub struct Response {
-    pub code: u32,
     pub response: String,
-    pub message: Option<String>,
+    pub code: u32,
     #[serde(rename = "serverID")]
     pub server_id: String,
+    pub message: Option<String>,
+    #[serde(rename = "changesRemaining")]
+    pub changes_remaining: String,
     pub datetime: String,
 }
 
@@ -46,29 +48,28 @@ pub struct SystemStatus {
 
 #[derive(Deserialize, Debug)]
 pub struct Account {
-    #[serde(rename = "expiresEpoch")]
-    pub expires_epoch: f64,
+    pub expires: String,
     pub messages: Vec<Value>,
     #[serde(rename = "maxLineups")]
     pub max_lineups: u32,
-    pub expires: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Status {
-    pub code: u32,
     pub account: Account,
-    pub lineups: Vec<Value>,
-    #[serde(rename = "lineupChangesRemaining")]
-    pub lineup_changes_remaining: u32,
+    pub lineups: Vec<Lineup>,
+    #[serde(rename = "lastDataUpdate")]
+    pub last_data_update: String,
+    pub notifications: Vec<Value>,
     #[serde(rename = "systemStatus")]
     pub system_status: Vec<SystemStatus>,
     #[serde(rename = "serverID")]
     pub server_id: String,
     pub datetime: String,
+    pub code: u32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Service {
     #[serde(rename = "type")]
     pub type_name: String,
@@ -76,7 +77,7 @@ pub struct Service {
     pub uri: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Country {
     #[serde(rename = "fullName")]
     pub full_name: String,
@@ -88,17 +89,26 @@ pub struct Country {
     pub postal_code: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Lineup {
-    #[serde(rename = "lineupID")]
-    pub lineup_id: String,
-    pub name: String,
-    pub transport: String,
-    pub location: String,
+    #[serde(rename = "ID")]
+    pub id: Option<String>,
+    pub lineup: Option<String>,
+    pub modified: String,
     pub uri: String,
+    #[serde(rename = "isDeleted")]
+    pub is_deleted: Option<bool>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+pub struct Headend {
+    pub headend: String,
+    pub transport: String,
+    pub location: String,
+    pub lineups: Vec<Lineup>,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct LineupPreview {
     pub channel: String,
     pub name: Option<String>,
@@ -107,26 +117,151 @@ pub struct LineupPreview {
     pub affiliate: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+pub struct ErrorMsg {
+    pub message: String,
+}
+
+/*
+#[derive(Deserialize, Debug)]
 pub struct Schedule {
     #[serde(rename = "stationID")]
-    pub station_id: String,
-    pub code: u32,
-    pub response: String,
-    pub message: Option<String>,
+    pub station_id: Option<String>,
+    pub date: Option<String>,
+    pub code: Option<u32>,
+    pub response: Option<String>,
+    pub message: String,
+    #[serde(rename = "lastModified")]
+    pub last_modified: Option<String>,
+    #[serde(rename = "MD5")]
     pub md5: Option<String>,
 }
+*/
 
-#[derive(Deserialize)]
-pub struct Map {
-    #[serde(rename = "stationID")]
-    pub station_id: String,
-    pub channel: String,
-    #[serde(rename = "uhfVhf")]
-    pub uhf_vhf: String,
+#[derive(Deserialize, Debug)]
+pub struct Rating {
+    pub body: String,
+    pub code: String,
+    #[serde(rename = "subRating")]
+    pub sub_rating: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+pub struct MultiPart {
+    #[serde(rename = "partNumber")]
+    pub part_number: u32,
+    #[serde(rename = "totalParts")]
+    pub total_parts: u32,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Program {
+    #[serde(rename = "programID")]
+    pub program_id: String,
+    #[serde(rename = "airDateTime")]
+    pub air_date_time: String,
+    pub duration: u32,
+    pub md5: String,
+    #[serde(rename = "multiPart")]
+    pub multi_part: Option<MultiPart>,
+    #[serde(rename = "audioProperties")]
+    pub audio_properties: Option<Vec<String>>,
+    pub ratings: Option<Vec<Rating>>,
+    #[serde(rename = "videoProperties")]
+    pub video_properties: Option<Vec<String>>,
+
+    pub new: Option<bool>,
+    #[serde(rename = "cableInTheClassroom")]
+    pub cable_in_the_classroom: Option<bool>,
+    pub catchup: Option<bool>,
+    pub continued: Option<bool>,
+    pub educational: Option<bool>,
+    #[serde(rename = "joinedInProgress")]
+    pub joined_in_progress: Option<bool>,
+    #[serde(rename = "leftInProgress")]
+    pub left_in_progress: Option<bool>,
+    pub premiere: Option<bool>,
+    #[serde(rename = "programBreak")]
+    pub program_break: Option<bool>,
+    pub repeat: Option<bool>,
+    pub signed: Option<bool>,
+    #[serde(rename = "subjectToBlackout")]
+    pub subject_to_blackout: Option<bool>,
+    #[serde(rename = "timeApproximate")]
+    pub time_approximate: Option<bool>,
+    pub free: Option<bool>,
+    #[serde(rename = "liveTapeDelay")]
+    pub live_tape_delay: Option<String>,
+    #[serde(rename = "isPremiereOrFinale")]
+    pub is_premiere_or_finale: Option<String>
+}
+
+#[derive(Deserialize, Debug)]
+pub struct MapMetaData {
+    pub lineup: String,
+    pub modified: String,
+    pub transport: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct MD5 {
+    pub code: u32,
+    pub message: String,
+    #[serde(rename = "lastModified")]
+    pub last_modified: String,
+    pub md5: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Schedules {
+    #[serde(rename = "stationID")]
+    pub station_id: String,
+    pub programs: Vec<Program>,
+    pub metadata: MetaData,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct _Map {
+    #[serde(rename = "stationID")]
+    pub station_id: String,
+    #[serde(rename = "frequencyHz")]
+    pub frequency_hz: Option<u64>,
+    #[serde(rename = "serviceID")]
+    pub service_id: Option<u32>,
+    #[serde(rename = "networkID")]
+    pub network_id: Option<u32>,
+    #[serde(rename = "transportID")]
+    pub transport_id: Option<u32>,
+    pub polarization: Option<String>,
+    #[serde(rename = "deliverySystem")]
+    delivery_system: Option<String>,
+    #[serde(rename = "modulationSystem")]
+    pub modulation_system: Option<String>,
+    #[serde(rename = "symbolrate")]
+    pub symbol_rate: Option<u32>,
+    pub fec: Option<String>,
+    pub channel: Option<String>,
+    #[serde(rename = "virtualChannel")]
+    pub virtual_channel: Option<String>,
+    #[serde(rename = "channelMajor")]
+    pub channel_major: Option<u32>,
+    #[serde(rename = "channelMinor")]
+    pub channel_minor: Option<u32>,
+    #[serde(rename = "providerCallsign")]
+    pub provider_call_sign: Option<String>,
+    #[serde(rename = "logicalChannelNumber")]
+    logical_channel_number: Option<String>,
+    #[serde(rename = "matchType")]
+    pub match_type: Option<String>,
+    #[serde(rename = "uhfVhf")]
+    pub uhf_vhf: Option<u32>,
+    #[serde(rename = "atscMajor")]
+    pub atsc_major: Option<u32>,
+    #[serde(rename = "atscMinor")]
+    pub atsc_minor: Option<u32>,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct Broadcaster {
     pub city: String,
     pub state: String,
@@ -135,7 +270,7 @@ pub struct Broadcaster {
     pub country: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct StationLogo {
     pub uri: String,
     pub width: u32,
@@ -144,7 +279,7 @@ pub struct StationLogo {
     pub source: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Station {
     #[serde(rename = "isCommercialFree")]
     pub is_commercial_free: Option<bool>,
@@ -163,58 +298,29 @@ pub struct Station {
     pub station_logo: Option<Vec<StationLogo>>,
 }
 
-#[derive(Deserialize)]
-pub struct MapMetaData {
-    pub lineup: String,
-    pub modified: String,
-    pub transport: String,
-}
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Mapping {
-    pub map: Vec<Map>,
-    pub stations: Vec<Station>,
+    pub map: Vec<_Map>,
+    pub stations: Vec<Value>,
     pub metadata: MapMetaData,
 }
 
-#[derive(Deserialize)]
-pub struct Title120 {
-    pub title: String,
-}
-
-#[derive(Deserialize)]
-pub struct Description {
-    #[serde(rename = "descriptionLanguage")]
-    pub description_language: String,
-    pub description: String,
-}
-
-#[derive(Deserialize)]
-pub struct Descriptions {
-    pub description100: Option<Vec<Description>>,
-    pub description1000: Vec<Description>,
-}
-
-#[derive(Deserialize)]
-pub struct Gracenote {
-    #[serde(rename = "totalEpisodes")]
-    pub total_episodes: u32,
-    pub season: u32,
-    pub episode: u32,
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct MetaData {
-    pub gracenote: Option<Gracenote>,
+    pub modified: String,
+    pub md5: String,
+    #[serde(rename = "startDate")]
+    pub start_date: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Caption {
     pub content: String,
     pub lang: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct PreferredImage {
     pub width: String,
     pub height: String,
@@ -228,21 +334,21 @@ pub struct PreferredImage {
     pub tier: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Recommendation {
     #[serde(rename = "programID")]
     pub program_id: String,
     pub title120: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct ContentRating {
     pub body: String,
     pub code: String,
     pub country: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Cast {
     #[serde(rename = "billingOrder")]
     pub billing_order: String,
@@ -252,37 +358,6 @@ pub struct Cast {
     #[serde(rename = "personId")]
     pub person_id: String,
     pub name: String,
-}
-
-#[derive(Deserialize)]
-pub struct Program {
-    #[serde(rename = "resourceID")]
-    pub resource_id: String,
-    #[serde(rename = "programID")]
-    pub program_id: String,
-    pub titles120: Vec<Title120>,
-    pub descriptions: Descriptions,
-    #[serde(rename = "originalAirDate")]
-    pub original_air_date: String,
-    pub genres: Vec<String>,
-    pub metadata: Option<Vec<MetaData>>,
-    #[serde(rename = "officialURL")]
-    pub official_url: Option<String>,
-    #[serde(rename = "keyWords")]
-    pub keywords: serde_json::map::Map<String, Value>,
-    #[serde(rename = "contentRating")]
-    pub content_rating: Option<Vec<ContentRating>>,
-    pub cast: Option<Vec<Cast>>,
-    #[serde(rename = "entityType")]
-    pub entity_type: String,
-    #[serde(rename = "showType")]
-    pub show_type: String,
-    pub recommendations: Option<Vec<Recommendation>>,
-    #[serde(rename = "hasSeriesArtwork")]
-    pub has_series_artwork: bool,
-    #[serde(rename = "preferredImage")]
-    pub preferred_image: PreferredImage,
-    pub md5: String,
 }
 
 pub struct SchedulesDirect {
@@ -324,8 +399,8 @@ impl SchedulesDirect {
         hasher.input_str(pwd.as_str());
 
         let auth = json!({
-        "username": serde_json::Value::String(username.to_string()),
-        "password": serde_json::Value::String(hasher.result_str())
+        "username": Value::String(username.to_string()),
+        "password": Value::String(hasher.result_str())
         });
 
         self.token = "".to_string();
@@ -376,26 +451,7 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn service_map(
-        &self,
-        service: &str,
-    ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
-        assert!(!self.token.is_empty());
-        let url = format!("{}{}", &self.domain, &service);
-        retry(ExponentialBackoff::default(), || async {
-            Ok(self
-                .client
-                .get(&url)
-                .header(HEADER_TOKEN_KEY, &self.token)
-                .send()
-                .await?
-                .json()
-                .await?)
-        })
-        .await
-    }
-
-    pub async fn countries(&self) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+    pub async fn countries(&self) -> Result<Map<String, Value>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/available/countries", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -411,7 +467,7 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn languages(&self) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+    pub async fn languages(&self) -> Result<Map<String, Value>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/available/languages", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -427,13 +483,34 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn transmitter(
+    pub async fn dvb_s(
+        &self,
+    ) -> Result<Vec<Map<String, Value>>, reqwest::Error> {
+        assert!(!self.token.is_empty());
+        let url = format!(
+            "{}/{}/available/dvb-s",
+            &self.domain, &self.api
+        );
+        retry(ExponentialBackoff::default(), || async {
+            Ok(self
+                .client
+                .get(&url)
+                .header(HEADER_TOKEN_KEY, &self.token)
+                .send()
+                .await?
+                .json()
+                .await?)
+        })
+            .await
+    }
+
+    pub async fn dvb_t(
         &self,
         country_iso_3166_1: &str,
     ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!(
-            "{}/{}/available/transmitters/{}",
+            "{}/{}/transmitters/{}",
             &self.domain, &self.api, country_iso_3166_1
         );
         retry(ExponentialBackoff::default(), || async {
@@ -449,16 +526,17 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn lineups(
+    pub async fn headends(
         &self,
         country: &str,
         postalcode: &str,
-    ) -> Result<Vec<Lineup>, reqwest::Error> {
+    ) -> Result<Vec<Headend>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!(
-            "{}/{}/lineups?country={}&postalcode={}",
+            "{}/{}/headends?country={}&postalcode={}",
             &self.domain, &self.api, country, postalcode
         );
+        println!("{}", url);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
                 .client
@@ -474,13 +552,12 @@ impl SchedulesDirect {
 
     pub async fn schedules_md5(
         &self,
-        station_ids: serde_json::Value,
-    ) -> Result<Vec<Schedule>, reqwest::Error> {
+        station_ids: Value,
+    ) -> Result<Map<String, Value>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/schedules/md5", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self
-                .client
+            Ok(self.client
                 .post(&url)
                 .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&station_ids)
@@ -494,10 +571,11 @@ impl SchedulesDirect {
 
     pub async fn schedules(
         &self,
-        station_ids: serde_json::Value,
-    ) -> Result<Vec<Schedule>, reqwest::Error> {
+        station_ids: Value,
+    ) -> Result<Vec<Schedules>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/schedules", &self.domain, &self.api);
+
         retry(ExponentialBackoff::default(), || async {
             Ok(self
                 .client
@@ -509,17 +587,17 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn lineups_preview(
         &self,
-        lineup_id: &str,
+        lineup: &str,
     ) -> Result<Vec<LineupPreview>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!(
             "{}/{}/lineups/preview/{}",
-            &self.domain, &self.api, lineup_id
+            &self.domain, &self.api, lineup
         );
         retry(ExponentialBackoff::default(), || async {
             Ok(self
@@ -536,7 +614,7 @@ impl SchedulesDirect {
 
     pub async fn programs(
         &self,
-        programs: serde_json::Value,
+        programs: Value,
     ) -> Result<Vec<Program>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/programs", &self.domain, &self.api);
@@ -556,7 +634,7 @@ impl SchedulesDirect {
 
     pub async fn programs_generic(
         &self,
-        programs: serde_json::Value,
+        programs: Value,
     ) -> Result<Vec<Program>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/programs/generic", &self.domain, &self.api);
@@ -576,8 +654,8 @@ impl SchedulesDirect {
 
     pub async fn metadata_programs(
         &self,
-        programs: serde_json::Value,
-    ) -> Result<serde_json::map::Map<String, Value>, reqwest::Error> {
+        programs: Value,
+    ) -> Result<Map<String, Value>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/metadata/programs", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -596,8 +674,8 @@ impl SchedulesDirect {
 
     pub async fn metadata_awards(
         &self,
-        programs: serde_json::Value,
-    ) -> Result<serde_json::Value, reqwest::Error> {
+        programs: Value,
+    ) -> Result<Value, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/metadata/awards", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -614,7 +692,7 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn xref(&self, programs: serde_json::Value) -> Result<String, reqwest::Error> {
+    pub async fn xref(&self, programs: Value) -> Result<String, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/xref", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -667,8 +745,7 @@ impl SchedulesDirect {
         assert!(!self.token.is_empty());
         let url = format!("{}{}", &self.domain, uri);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self
-                .client
+            Ok(self.client
                 .get(&url)
                 .header(HEADER_TOKEN_KEY, &self.token)
                 .send()

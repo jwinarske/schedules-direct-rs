@@ -12,21 +12,21 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 log = "^0.4"
-tokio = { package = "tokio", version = "1.0", features = ["time", "macros", "rt-multi-thread"] }
-reqwest = { version = "0.11.0", features = ["blocking", "json", "gzip"] }
-backoff = { version = "0.3.0", features = ["tokio"] }
-serde = { version = "1.0.121", features = ["derive"] }
-serde_json = "1.0.59"
-rust-crypto = "0.2.36"
-chrono = "0.4.19"
-diesel = { version = "1.4.5", features = ["sqlite"] }
+tokio = { package = "tokio", version = "1.12", features = ["time", "macros", "rt-multi-thread"] }
+reqwest = { version = "0.11", features = ["blocking", "json", "gzip"] }
+backoff = { version = "0.3", features = ["tokio"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rust-crypto = "0.2"
+chrono = "0.4"
+diesel = { version = "1.4", features = ["sqlite"] }
 
 [dev-dependencies]
-pretty_env_logger = "^0.4.0"
-csv = "1.1.5"
-serde_derive = "1.0.123"
-rand = "0.8.3"
-futures = "0.3.12"
+pretty_env_logger = "^0.4"
+csv = "1.1"
+serde_derive = "1.0"
+rand = "0.8"
+futures = "0.3"
 
 [[example]]
 name = "sample"

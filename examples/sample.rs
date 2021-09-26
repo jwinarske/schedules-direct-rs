@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use schedules_direct::*;
 use futures::StreamExt;
 
-static DEFAULT_LINEUP: &str = "/20191022/lineups/USA-OTA-98119";
+static DEFAULT_LINEUP: &str = "/20141201/lineups/USA-OTA-98119";
 static SCHEDULE_CHUNK_SIZE: usize = 10;
 
 async fn dump_lineups_preview(

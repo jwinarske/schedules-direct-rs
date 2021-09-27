@@ -1,7 +1,7 @@
-DROP TABLE imageCache;
+DROP TABLE image_cache;
 DROP TABLE schedules;
-DROP TABLE programRatings;
-DROP TABLE programGenres;
+DROP TABLE program_ratings;
+DROP TABLE program_genres;
 DROP TABLE programs;
 DROP TABLE people;
 DROP TABLE lineups;

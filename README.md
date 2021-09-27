@@ -6,9 +6,15 @@
 RUST_LOG=info cargo run --example sample
 ```
 
-Confirmed to work on Linux and MacOS.  Should work on everything else...
+Confirmed to work on Linux and MacOS. Should work on everything else...
 
 TODO - SQLite DB ingest
+
+# prerequisites
+
+```
+cargo install diesel_cli --no-default-features --features sqlite --force
+```
 
 ## Schedules Direct Grabber
 

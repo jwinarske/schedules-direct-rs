@@ -1,8 +1,7 @@
-
 CREATE TABLE settings
 (
     key   TEXT PRIMARY KEY NOT NULL UNIQUE,
-    value TEXT NOT NULL
+    value TEXT             NOT NULL
 );
 
 CREATE TABLE messages
@@ -51,18 +50,18 @@ CREATE TABLE programs
     json      TEXT                              NOT NULL
 );
 
-CREATE TABLE programGenres
+CREATE TABLE program_genres
 (
     programID varchar(64) PRIMARY KEY NOT NULL,
     relevance char(1)                 NOT NULL DEFAULT '0',
     genre     varchar(30)             NOT NULL
 );
 
-CREATE INDEX genre ON programGenres (genre);
+CREATE INDEX genre ON program_genres (genre);
 
-CREATE UNIQUE INDEX pid_relevance ON programGenres (programID, relevance);
+CREATE UNIQUE INDEX pid_relevance ON program_genres (programID, relevance);
 
-CREATE TABLE programRatings
+CREATE TABLE program_ratings
 (
     programID varchar(64) PRIMARY KEY NOT NULL,
     system    varchar(30)             NOT NULL,
@@ -72,14 +71,14 @@ CREATE TABLE programRatings
 
 CREATE TABLE schedules
 (
-    stationID varchar(12) NOT NULL UNIQUE,
-    md5       char(22) PRIMARY KEY    NOT NULL
+    stationID varchar(12)          NOT NULL UNIQUE,
+    md5       char(22) PRIMARY KEY NOT NULL
 );
 
 CREATE INDEX md5 ON schedules (md5);
 
 
-CREATE TABLE imageCache
+CREATE TABLE image_cache
 (
     row    INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
     item   varchar(128)                      NOT NULL,
@@ -89,6 +88,6 @@ CREATE TABLE imageCache
     type   char(1)                           NOT NULL -- COMMENT 'L-Channel Logo'
 );
 
-CREATE UNIQUE INDEX id ON imageCache (item, height, width);
+CREATE UNIQUE INDEX id ON image_cache (item, height, width);
 
-CREATE INDEX type ON imageCache (type);
+CREATE INDEX type ON image_cache (type);

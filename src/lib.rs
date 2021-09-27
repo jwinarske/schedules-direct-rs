@@ -1,12 +1,24 @@
+#[macro_use]
+extern crate diesel;
+extern crate dotenv;
+
 use std::env;
 use std::time::Duration;
 
 use backoff::future::retry;
 use backoff::ExponentialBackoff;
+use diesel::prelude::*;
+use diesel::sqlite::SqliteConnection;
+use dotenv::dotenv;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use reqwest::Client;
-use serde::{Deserialize};
-use serde_json::{json, Value, Map};
+use serde::Deserialize;
+use serde_json::{json, Map, Value};
+
+use self::models::{NewSetting, Settings};
+
+pub mod models;
+pub mod schema;
 
 static APP_USER_AGENT: &str = "RustGrabber";
 static DOMAIN: &str = "https://json.schedulesdirect.org";
@@ -15,6 +27,25 @@ static API: &str = "20141201";
 static CONTENT_TYPE_VALUE: &str = "application/json;charset=UTF-8";
 static HEADER_TOKEN_KEY: &str = "token";
 static CLIENT_TIMEOUT: u64 = 10;
+
+pub fn establish_connection() -> SqliteConnection {
+    dotenv().ok();
+
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    SqliteConnection::establish(&database_url)
+        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
+}
+
+pub fn create_setting<'a>(conn: &SqliteConnection, key: &'a str, value: &'a str) -> usize {
+    use crate::schema::settings;
+
+    let new_setting = NewSetting { key, value };
+
+    diesel::insert_into(settings::table)
+        .values(&new_setting)
+        .execute(conn)
+        .expect("Error saving new setting")
+}
 
 #[derive(Deserialize, Debug)]
 pub struct Response {
@@ -193,7 +224,7 @@ pub struct Program {
     #[serde(rename = "liveTapeDelay")]
     pub live_tape_delay: Option<String>,
     #[serde(rename = "isPremiereOrFinale")]
-    pub is_premiere_or_finale: Option<String>
+    pub is_premiere_or_finale: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -298,7 +329,6 @@ pub struct Station {
     pub station_logo: Option<Vec<StationLogo>>,
 }
 
-
 #[derive(Deserialize, Debug)]
 pub struct Mapping {
     pub map: Vec<_Map>,
@@ -365,6 +395,7 @@ pub struct SchedulesDirect {
     api: String,
     client: Client,
     token: String,
+    connection: SqliteConnection,
 }
 
 impl SchedulesDirect {
@@ -380,11 +411,14 @@ impl SchedulesDirect {
             .build()
             .unwrap();
 
+        let connection = establish_connection();
+
         SchedulesDirect {
             domain: DOMAIN.parse().unwrap(),
             api: API.parse().unwrap(),
             client,
             token: "".to_string(),
+            connection,
         }
     }
 
@@ -483,14 +517,9 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn dvb_s(
-        &self,
-    ) -> Result<Vec<Map<String, Value>>, reqwest::Error> {
+    pub async fn dvb_s(&self) -> Result<Vec<Map<String, Value>>, reqwest::Error> {
         assert!(!self.token.is_empty());
-        let url = format!(
-            "{}/{}/available/dvb-s",
-            &self.domain, &self.api
-        );
+        let url = format!("{}/{}/available/dvb-s", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
                 .client
@@ -501,7 +530,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
     pub async fn dvb_t(
@@ -557,7 +586,8 @@ impl SchedulesDirect {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/schedules/md5", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .post(&url)
                 .header(HEADER_TOKEN_KEY, &self.token)
                 .json(&station_ids)
@@ -569,10 +599,7 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn schedules(
-        &self,
-        station_ids: Value,
-    ) -> Result<Vec<Schedules>, reqwest::Error> {
+    pub async fn schedules(&self, station_ids: Value) -> Result<Vec<Schedules>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/schedules", &self.domain, &self.api);
 
@@ -587,7 +614,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-            .await
+        .await
     }
 
     pub async fn lineups_preview(
@@ -595,10 +622,7 @@ impl SchedulesDirect {
         lineup: &str,
     ) -> Result<Vec<LineupPreview>, reqwest::Error> {
         assert!(!self.token.is_empty());
-        let url = format!(
-            "{}/{}/lineups/preview/{}",
-            &self.domain, &self.api, lineup
-        );
+        let url = format!("{}/{}/lineups/preview/{}", &self.domain, &self.api, lineup);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
                 .client
@@ -612,10 +636,7 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn programs(
-        &self,
-        programs: Value,
-    ) -> Result<Vec<Program>, reqwest::Error> {
+    pub async fn programs(&self, programs: Value) -> Result<Vec<Program>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/programs", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -632,10 +653,7 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn programs_generic(
-        &self,
-        programs: Value,
-    ) -> Result<Vec<Program>, reqwest::Error> {
+    pub async fn programs_generic(&self, programs: Value) -> Result<Vec<Program>, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/programs/generic", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -672,10 +690,7 @@ impl SchedulesDirect {
         .await
     }
 
-    pub async fn metadata_awards(
-        &self,
-        programs: Value,
-    ) -> Result<Value, reqwest::Error> {
+    pub async fn metadata_awards(&self, programs: Value) -> Result<Value, reqwest::Error> {
         assert!(!self.token.is_empty());
         let url = format!("{}/{}/metadata/awards", &self.domain, &self.api);
         retry(ExponentialBackoff::default(), || async {
@@ -711,7 +726,7 @@ impl SchedulesDirect {
 
     pub async fn lineup_add(&self, lineup: &str) -> Result<Response, reqwest::Error> {
         assert!(!self.token.is_empty());
-        let url = format!("{}{}", &self.domain, lineup);
+        let url = format!("{}{}/{}/lineups", &self.domain, lineup, self.api);
         retry(ExponentialBackoff::default(), || async {
             Ok(self
                 .client
@@ -745,7 +760,8 @@ impl SchedulesDirect {
         assert!(!self.token.is_empty());
         let url = format!("{}{}", &self.domain, uri);
         retry(ExponentialBackoff::default(), || async {
-            Ok(self.client
+            Ok(self
+                .client
                 .get(&url)
                 .header(HEADER_TOKEN_KEY, &self.token)
                 .send()

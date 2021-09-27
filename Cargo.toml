@@ -12,6 +12,8 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 log = "^0.4"
+dotenv = "0.10"
+diesel = { version = "1.4", features = ["sqlite"] }
 tokio = { package = "tokio", version = "1.12", features = ["time", "macros", "rt-multi-thread"] }
 reqwest = { version = "0.11", features = ["blocking", "json", "gzip"] }
 backoff = { version = "0.3", features = ["tokio"] }
@@ -19,7 +21,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rust-crypto = "0.2"
 chrono = "0.4"
-diesel = { version = "1.4", features = ["sqlite"] }
 
 [dev-dependencies]
 pretty_env_logger = "^0.4"
@@ -31,10 +32,6 @@ futures = "0.3"
 [[example]]
 name = "sample"
 path = "examples/sample.rs"
-
-[[example]]
-name = "lineup_test"
-path = "examples/lineup_test.rs"
 
 [profile.release]
 lto = true

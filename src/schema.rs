@@ -19,11 +19,11 @@ table! {
 }
 
 table! {
-    lineups (row) {
-        row -> Integer,
-        lineup -> Text,
-        modified -> Nullable<Text>,
-        json -> Nullable<Text>,
+    lineups (id) {
+        id -> Text,
+        modified -> Text,
+        uri -> Text,
+        is_deleted -> Bool,
     }
 }
 

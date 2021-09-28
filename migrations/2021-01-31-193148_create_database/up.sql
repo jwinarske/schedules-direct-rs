@@ -27,13 +27,11 @@ CREATE UNIQUE INDEX person_pid_role ON credits (personID, programID, role);
 
 CREATE TABLE lineups
 (
-    row      INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL UNIQUE,
-    lineup   varchar(50)                       NOT NULL,
-    modified char(20) DEFAULT '1970-01-01T00:00:00Z',
-    json     TEXT
+    id      TEXT PRIMARY KEY NOT NULL UNIQUE,
+    modified char(20) NOT NULL DEFAULT '1970-01-01T00:00:00Z',
+    uri     TEXT NOT NULL,
+    is_deleted BOOLEAN NOT NULL DEFAULT false
 );
-
-CREATE UNIQUE INDEX lineup ON lineups (lineup);
 
 CREATE TABLE people
 (

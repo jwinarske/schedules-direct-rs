@@ -8,8 +8,16 @@ use futures::StreamExt;
 use serde_json::{Map, Value};
 
 use schedules_direct::*;
+use schedules_direct::schema::lineups::columns::is_deleted;
 
-static DEFAULT_LINEUP: &str = "USA-OTA-98119";
+#[macro_export]
+macro_rules! ternary {
+    ($condition: expr, $_true: expr, $_false: expr) => {
+        if $condition { $_true } else { $_false }
+    };
+}
+
+//static DEFAULT_LINEUP: &str = "USA-OTA-98119";
 static SCHEDULE_CHUNK_SIZE: usize = 10;
 
 async fn dump_lineups_preview(
@@ -122,31 +130,50 @@ async fn dump_lineup_map(
 
 async fn handle_status(sd: &SchedulesDirect) -> Result<(), Box<dyn std::error::Error>> {
     let status = sd.status().await?;
-    info!("{:#?}", &status);
-    for system_status in &status.system_status {
-        info!("{:#?}", system_status);
-    }
+    //info!("{:#?}", &status);
+
     let account = &status.account;
     let datetime = DateTime::parse_from_rfc3339(&account.expires.as_str()).unwrap();
     let expires_datetime = datetime.format("%Y-%m-%d %H:%M:%S");
-    info!("Expires Date/Time: {}", expires_datetime);
+    info!("Account Expires: {}", expires_datetime);
 
-    if status.lineups.is_empty() {
-        error!("Account has no lineups!");
-        // add default lineup
-        let resp = sd.lineup_add(DEFAULT_LINEUP).await?;
-        let mut msg = String::new();
-        if resp.message.is_some() {
-            msg = resp.message.unwrap();
+    for lineup in &status.lineups {
+        if lineup.lineup.is_some() {
+            info!("Lineup: {}", lineup.lineup.as_ref().unwrap());
         }
-        info!("Set Default Lineup: ({}) [{}]", resp.response, msg);
-    } else {
-        for lineup in &status.lineups {
-            if lineup.lineup.is_some() {
-                dump_lineups_preview(&sd, &lineup.lineup.as_ref().unwrap()).await?;
-            }
-            dump_lineup_map(&sd, &lineup.uri).await?;
+        let modified = DateTime::parse_from_rfc3339(&lineup.modified.as_str()).unwrap();
+        let local_modified = modified.format("%Y-%m-%d %H:%M:%S");
+        info!("\tmodified: {}", local_modified);
+        info!("\turi: {}", lineup.uri);
+        if lineup.is_deleted.is_some() {
+            info!("\tis_deleted: {}", ternary!(lineup.is_deleted.unwrap(), "true", "false"));
         }
+    }
+
+    let last_data_update = DateTime::parse_from_rfc3339(&status.last_data_update.as_str()).unwrap();
+    let localized_last_data_update = last_data_update.format("%Y-%m-%d %H:%M:%S");
+    info!("Last Data Update: {}", localized_last_data_update);
+
+    for notification in &status.notifications {
+        info!("Notification: {}", notification);
+    }
+
+    for system_status in &status.system_status {
+        let date = DateTime::parse_from_rfc3339(&system_status.date.as_str()).unwrap();
+        let status_date = date.format("%Y-%m-%d %H:%M:%S");
+        info!("System Status: {}, {}, {}", status_date, system_status.status, system_status.message);
+    }
+
+    info!("Server ID: {}", &status.server_id);
+    let datetime = DateTime::parse_from_rfc3339(&status.datetime.as_str()).unwrap();
+    let localized_datetime = datetime.format("%Y-%m-%d %H:%M:%S");
+    info!("Date/Time: {}", localized_datetime);
+    info!("Code: {}", &status.code);
+
+    for lineup in &status.lineups {
+        if lineup.lineup.is_some() {
+        }
+        dump_lineup_map(&sd, &lineup.uri).await?;
     }
 
     Ok(())

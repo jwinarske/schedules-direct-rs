@@ -82,8 +82,8 @@ async fn dump_lineup_map(
                 }
             }),
     )
-    .buffer_unordered(SCHEDULE_CHUNK_SIZE)
-    .collect::<Vec<Map<String, Value>>>();
+        .buffer_unordered(SCHEDULE_CHUNK_SIZE)
+        .collect::<Vec<Map<String, Value>>>();
     println!("Waiting on /schedules/md5...");
     fetches.await;
 
@@ -112,8 +112,8 @@ async fn dump_lineup_map(
                 }
             }),
     )
-    .buffer_unordered(SCHEDULE_CHUNK_SIZE)
-    .collect::<Vec<Vec<Schedules>>>();
+        .buffer_unordered(SCHEDULE_CHUNK_SIZE)
+        .collect::<Vec<Vec<Schedules>>>();
     println!("Waiting on /schedules...");
     fetches.await;
 
@@ -158,10 +158,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut sd = SchedulesDirect::new();
 
-    let token = sd.token().await?;
+    let token = sd.token_get().await?;
     match token.code {
         0 => {
-            sd.set_token(&token.token);
+            sd.token_set(&token.token);
         }
         3000 => {
             error!("{}, Try again in an hour", token.message);

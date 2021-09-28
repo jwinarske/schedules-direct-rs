@@ -14,6 +14,7 @@ TODO - SQLite DB ingest
 
 ```
 cargo install diesel_cli --no-default-features --features sqlite --force
+diesel migration run
 ```
 
 ## Schedules Direct Grabber

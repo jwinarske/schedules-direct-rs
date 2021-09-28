@@ -5,13 +5,14 @@ extern crate dotenv;
 use std::env;
 use std::time::Duration;
 
-use backoff::future::retry;
 use backoff::ExponentialBackoff;
+use backoff::future::retry;
+use crypto::digest::Digest;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use dotenv::dotenv;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT};
 use reqwest::Client;
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -422,19 +423,66 @@ impl SchedulesDirect {
         }
     }
 
-    pub async fn token(&mut self) -> Result<Token, reqwest::Error> {
+    pub async fn token_get(&mut self) -> Result<Token, reqwest::Error> {
         let url = format!("{}/{}/token", &self.domain, &self.api);
 
-        let username = env::var("SD_USER").expect("you must export SD_USER");
-        let pwd = env::var("SD_PWD").expect("you must export SD_PWD");
+        use crate::schema::settings::dsl::*;
+        let results = settings
+            .load::<Settings>(&self.connection)
+            .expect("Error loading settings");
 
-        use crypto::digest::Digest;
-        let mut hasher = crypto::sha1::Sha1::new();
-        hasher.input_str(pwd.as_str());
+        struct Login {
+            user: String,
+            user_found: bool,
+            pwd: String,
+            pwd_found: bool,
+        }
+        let mut cred = Login {
+            user: "".to_string(),
+            user_found: false,
+            pwd: "".to_string(),
+            pwd_found: false,
+        };
+
+        for setting in results {
+            if setting.key.eq("username") {
+                cred.user_found = true;
+                cred.user = setting.value.to_string();
+            } else if setting.key.eq("password") {
+                cred.pwd_found = true;
+                cred.pwd = setting.value.to_string();
+            }
+            if cred.user_found && cred.pwd_found {
+                break;
+            }
+        }
+
+        if !cred.user_found || !cred.pwd_found {
+            cred.user = env::var("SD_USER").expect("you must export SD_USER").to_string();
+            let pwd = env::var("SD_PWD").expect("you must export SD_PWD");
+
+            let mut hasher = crypto::sha1::Sha1::new();
+            hasher.input_str(pwd.as_str());
+            cred.pwd = hasher.result_str().to_string();
+
+            use crate::schema::settings;
+            let user_setting = NewSetting { key: "username", value: &*cred.user };
+            let pwd_setting = NewSetting { key: "password", value: &*cred.pwd };
+
+            let _user_insert = diesel::insert_into(settings::table)
+                .values(user_setting)
+                .execute(&self.connection)
+                .expect("Error saving user settings");
+
+            let _pwd_insert = diesel::insert_into(settings::table)
+                .values(pwd_setting)
+                .execute(&self.connection)
+                .expect("Error saving user settings");
+        }
 
         let auth = json!({
-        "username": Value::String(username.to_string()),
-        "password": Value::String(hasher.result_str())
+        "username": Value::String(cred.user),
+        "password": Value::String(cred.pwd)
         });
 
         self.token = "".to_string();
@@ -449,7 +497,7 @@ impl SchedulesDirect {
             .await?)
     }
 
-    pub fn set_token(&mut self, token: &str) {
+    pub fn token_set(&mut self, token: &str) {
         self.token = String::from(token);
     }
 
@@ -466,7 +514,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn available(&self) -> Result<Vec<Service>, reqwest::Error> {
@@ -482,7 +530,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn countries(&self) -> Result<Map<String, Value>, reqwest::Error> {
@@ -498,7 +546,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn languages(&self) -> Result<Map<String, Value>, reqwest::Error> {
@@ -514,7 +562,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn dvb_s(&self) -> Result<Vec<Map<String, Value>>, reqwest::Error> {
@@ -530,7 +578,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn dvb_t(
@@ -552,7 +600,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn headends(
@@ -576,7 +624,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn schedules_md5(
@@ -596,7 +644,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn schedules(&self, station_ids: Value) -> Result<Vec<Schedules>, reqwest::Error> {
@@ -614,7 +662,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn lineups_preview(
@@ -633,7 +681,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn programs(&self, programs: Value) -> Result<Vec<Program>, reqwest::Error> {
@@ -650,7 +698,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn programs_generic(&self, programs: Value) -> Result<Vec<Program>, reqwest::Error> {
@@ -667,7 +715,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn metadata_programs(
@@ -687,7 +735,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn metadata_awards(&self, programs: Value) -> Result<Value, reqwest::Error> {
@@ -704,7 +752,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn xref(&self, programs: Value) -> Result<String, reqwest::Error> {
@@ -721,7 +769,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn lineup_add(&self, lineup: &str) -> Result<Response, reqwest::Error> {
@@ -737,7 +785,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn lineup_delete(&self, lineup: &str) -> Result<Response, reqwest::Error> {
@@ -753,7 +801,7 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 
     pub async fn lineup_map(&self, uri: &str) -> Result<Mapping, reqwest::Error> {
@@ -769,6 +817,6 @@ impl SchedulesDirect {
                 .json()
                 .await?)
         })
-        .await
+            .await
     }
 }
